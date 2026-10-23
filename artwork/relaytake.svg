@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="200" y1="100" x2="800" y2="924" gradientUnits="userSpaceOnUse"><stop stop-color="#8274f4"/><stop offset=".5" stop-color="#6251db"/><stop offset="1" stop-color="#4231a8"/></linearGradient>
+    <linearGradient id="slate" x1="512" y1="440" x2="512" y2="764" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#eae7ff"/></linearGradient>
+    <linearGradient id="edge" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse"><stop stop-color="#ffffff" stop-opacity=".35"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+    <clipPath id="clapper"><rect x="260" y="336" width="504" height="92" rx="22"/></clipPath>
+  </defs>
+  <rect x="100" y="112" width="824" height="816" rx="184" fill="#211650" fill-opacity=".16"/>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#tile)"/>
+  <rect x="102" y="102" width="820" height="820" rx="182" fill="none" stroke="url(#edge)" stroke-width="4"/>
+  <g fill="#25185d" fill-opacity=".18" transform="translate(0 12)">
+    <rect x="260" y="446" width="504" height="318" rx="42"/>
+    <rect x="260" y="336" width="504" height="92" rx="22" transform="rotate(-12 260 428)"/>
+  </g>
+  <rect x="260" y="446" width="504" height="318" rx="42" fill="url(#slate)"/>
+  <path d="M467 529c-8-5-18 1-18 10v134c0 9 10 15 18 10l108-67c8-5 8-15 0-20z" fill="#5c49ce"/>
+  <g transform="rotate(-12 260 428)">
+    <rect x="260" y="336" width="504" height="92" rx="22" fill="#ffffff"/>
+    <g clip-path="url(#clapper)" fill="#6251db">
+      <path d="M300 336h66l-60 92h-66zm142 0h66l-60 92h-66zm142 0h66l-60 92h-66zm142 0h66l-60 92h-66z"/>
+    </g>
+  </g>
+</svg>

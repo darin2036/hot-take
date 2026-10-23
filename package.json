@@ -1,0 +1,37 @@
+{
+  "name": "relaytake",
+  "version": "0.1.0",
+  "description": "Hot Take: a local-first, open-source screen recorder (browser extension and static web app; the Mac app lives in mac/).",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && node scripts/validate.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && node scripts/package.mjs"
+  },
+  "keywords": [
+    "screen-recorder",
+    "local-first",
+    "privacy",
+    "browser-extension",
+    "mv3",
+    "mediarecorder"
+  ],
+  "author": "Darin Laframboise",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@types/chrome": "0.3.5",
+    "fake-indexeddb": "6.2.6",
+    "lucide-static": "1.60.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  },
+  "private": true
+}

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Hot Take",
+  "version": "0.1.0",
+  "description": "Record locally. Keep your screen recordings on your own device.",
+  "minimum_chrome_version": "116",
+  "incognito": "not_allowed",
+  "action": {
+    "default_title": "Open Hot Take",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

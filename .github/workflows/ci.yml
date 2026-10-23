@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  web:
+    name: browser extension and web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hot-take-extension
+          path: release/hot-take-0.1.0.zip
+
+  mac:
+    name: Mac app
+    # Needs macOS 26 and the Swift 6.2 toolchain. If your runner image is older, this job will fail to
+    # build; it is the check to run locally with `mac/scripts/test.sh` until a runner is available.
+    runs-on: macos-26
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: mac
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build -c release
+      - run: ./scripts/test.sh

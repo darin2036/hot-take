@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+.env*
+!.env.example
+.DS_Store
+output/
+.playwright-cli/
+
+# Swift package build output
+mac/.build/
+mac/build/
+.build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
