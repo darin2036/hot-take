@@ -205,3 +205,20 @@ The record sheet has a camera menu with a live preview and a button to the syste
 ## Tighten
 
 The Studio's Suggest Edits panel became **Tighten**: long pauses (1, 2 or 3 seconds, from the audio levels and the transcript's timing) and restarts (neighboring transcript lines compared by their words, with the on-device model asked only for ones the comparison missed) are drawn on the Video track, where each can be cut or kept by hovering, and all pauses can be cut at once. Verified: the word comparison with unit tests (repeated sentence, abandoned start, a changed word, punctuation, unrelated lines, short lines, and repeats far apart), the combining of the two sources, and the layout in an offscreen render with sample proposals. Not verified: accuracy of the pause and restart suggestions on real speech, the model's restart checks, and hovering and cutting from the markers with a real pointer.
+
+## Hot Take file (`.hottake`) — October 27, 2026
+
+Save Project in the Studio writes the take and its edit to one file; File ▸ Open Hot Take File… (or double-click) adds it to the library as a new take with the edit waiting in the Studio. Format in [hottake-file.md](hottake-file.md).
+
+Verified: unit tests that write and read files with real data (3 MB blobs round-trip byte for byte, empty blobs, a file that is not ours, a cut-short file, a flipped byte inside a blob and inside the table of contents, a newer format version, replacing an existing file leaves no temporary files), and take-level tests (a take with an edit, captions-less takes, a damaged file leaving the library untouched, two imports never colliding, no sender folder names inside the file, and moving an imported take keeping its audio and repointing its draft). The app builds and the bundle's Info.plist, with the new document type, passes `plutil -lint`.
+
+Not verified: the Save Project and Open File panels, double-clicking a file in Finder and the file icon, opening on a second Mac, large (multi-gigabyte) recordings and their progress display, and a recording with a presenter camera through a real round trip.
+
+## Microphone mode in the record sheet — October 27, 2026
+
+Under the microphone switch the sheet shows the Mac's Mic Mode for Hot Take (Standard, Voice Isolation or Wide Spectrum), a one-line hint, and a **Microphone Modes…** button that opens the system's Mic Modes menu. Hot Take cannot choose or force a mode; macOS only lets the person pick it and remembers the choice per app.
+
+Verified: the app builds and the sheet draws with the new row (rendered with `--record-sheet-snapshot`, showing "Mic mode: Standard" on the test Mac).
+
+Not verified: that the button opens the menu while nothing is recording, that Voice Isolation applies to microphone sound captured through ScreenCaptureKit (the recording path) and to voiceovers (a separate capture session), that the row updates after the mode is changed, and behavior with external and Bluetooth microphones. Until those are checked, a recording made with Voice Isolation on is not known to be noise-filtered.
+

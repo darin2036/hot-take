@@ -192,3 +192,62 @@ import Testing
         #expect(project.clips[0].pieces(outputDuration: 20).map(\.length).reduce(0, +) == 7)
     }
 }
+
+@Suite struct OriginalAudioSpliceTests {
+    @Test func theSoundFollowsTheVideoUntilItIsSplicedOnItsOwn() {
+        var project = StudioProject(duration: 10)
+        project.splice(at: 4)
+        #expect(project.originalAudioFollowsVideo)
+        #expect(project.originalAudioParts.map(\.source) == project.cuts.segments)
+
+        let spliced = project.spliceOriginalAudio(at: 7)
+        #expect(spliced)
+        #expect(!project.originalAudioFollowsVideo)
+        #expect(project.cuts.segments.count == 2)  // the video was not touched
+        let parts = project.originalAudioParts
+        #expect(parts.map(\.source) == [TimeSpan(start: 0, end: 4), TimeSpan(start: 4, end: 7), TimeSpan(start: 7, end: 10)])
+        #expect(parts.map(\.start) == [0, 4, 7])
+    }
+
+    @Test func anAudioSpliceTooCloseToAnEdgeIsRefused() {
+        var project = StudioProject(duration: 10)
+        let refused = project.spliceOriginalAudio(at: 0.05)
+        #expect(!refused)
+        #expect(project.originalAudioFollowsVideo)
+    }
+
+    @Test func removingAnAudioPartLeavesSilenceAndKeepsTheVideo() {
+        var project = StudioProject(duration: 10)
+        project.spliceOriginalAudio(at: 3)
+        project.spliceOriginalAudio(at: 6)
+        let middle = project.originalAudioParts[1]
+        let removed = project.removeOriginalAudioPart(middle.id)
+        #expect(removed)
+        #expect(project.outputDuration == 10)
+        #expect(project.originalAudioParts.map(\.span) == [TimeSpan(start: 0, end: 3), TimeSpan(start: 6, end: 10)])
+        project.relinkOriginalAudio()
+        #expect(project.originalAudioParts.map(\.source) == [TimeSpan(start: 0, end: 10)])
+    }
+
+    @Test func cuttingTheVideoLaterRipplesTheSeparatelyCutSound() throws {
+        var project = StudioProject(duration: 10)
+        project.spliceOriginalAudio(at: 5)
+        try project.remove(TimeSpan(start: 2, end: 4))
+        // The first part lost its 2–4 s; the second moved 2 s earlier and still plays 5–10 s of the recording.
+        let parts = project.originalAudioParts
+        #expect(parts.count == 3)
+        #expect(parts[0].source == TimeSpan(start: 0, end: 2) && parts[0].start == 0)
+        #expect(parts[1].source == TimeSpan(start: 4, end: 5) && parts[1].start == 2)
+        #expect(parts[2].source == TimeSpan(start: 5, end: 10) && parts[2].start == 3)
+        #expect(parts[2].end == project.outputDuration)
+    }
+
+    @Test func separatelyCutSoundSurvivesTheDraft() throws {
+        var project = StudioProject(duration: 10)
+        project.spliceOriginalAudio(at: 5)
+        let draft = StudioDraft(project: project, playhead: 0)
+        let data = try JSONEncoder().encode(draft)
+        let restored = try JSONDecoder().decode(StudioDraft.self, from: data).project(duration: 10, cameraSource: nil)
+        #expect(restored?.audioParts == project.audioParts)
+    }
+}

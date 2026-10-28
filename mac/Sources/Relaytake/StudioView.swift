@@ -591,7 +591,8 @@ struct StudioProperties: View {
             if let zoom = model.project.zoom(id) { zoomBar(zoom) }
         case .clip(let id):
             if let clip = model.project.clip(id) { clipBar(clip) }
-        case .original: originalBar
+        case .original: originalBar(part: nil)
+        case .audioPart(let id): originalBar(part: model.project.originalAudioPart(id))
         }
     }
 
@@ -701,10 +702,10 @@ struct StudioProperties: View {
     }
 
     // The recording's own sound
-    private var originalBar: some View {
+    private func originalBar(part: OriginalAudioPart?) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "waveform")
-            Text("Original audio")
+            Text(part.map { "Audio part  ·  \(timeLabel($0.start)) – \(timeLabel($0.end))" } ?? "Original audio")
             Image(systemName: "speaker.wave.2").foregroundStyle(.secondary)
             Slider(value: Binding(
                 get: { model.project.originalVolume },
@@ -715,6 +716,14 @@ struct StudioProperties: View {
                 get: { model.project.originalVolume == 0 },
                 set: { muted in model.edit { $0.originalVolume = muted ? 0 : 1 } }))
             Spacer()
+            if part != nil {
+                Button("Remove") { model.deleteSelection() }
+                    .help("Take this sound out and leave silence; the picture stays (Delete)")
+            }
+            if !model.project.originalAudioFollowsVideo {
+                Button("Follow Video") { model.relinkOriginalAudio() }
+                    .help("Undo the cuts made to the audio alone, so it is cut wherever the video is")
+            }
         }
     }
 }

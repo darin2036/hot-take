@@ -23,6 +23,39 @@ struct Microphone: Identifiable, Hashable {
     }
 }
 
+/// How the system is processing this app's microphone. The person chooses it in the system's own Mic Modes
+/// menu; an app can read the choice and open the menu, but cannot change it.
+enum MicrophoneModeStatus: Equatable {
+    case standard, voiceIsolation, wideSpectrum
+
+    static func current() -> MicrophoneModeStatus {
+        switch AVCaptureDevice.preferredMicrophoneMode {
+        case .voiceIsolation: .voiceIsolation
+        case .wideSpectrum: .wideSpectrum
+        default: .standard
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .standard: "Standard"
+        case .voiceIsolation: "Voice Isolation"
+        case .wideSpectrum: "Wide Spectrum"
+        }
+    }
+
+    /// One line for the record sheet: what the current mode does, and what to try if it is not Voice Isolation.
+    var hint: String {
+        switch self {
+        case .voiceIsolation: "Background noise is filtered out so your voice comes through."
+        case .standard: "Choose Voice Isolation to filter out background noise."
+        case .wideSpectrum: "Records the whole room. Choose Voice Isolation for just your voice."
+        }
+    }
+
+    static func openSystemMenu() { AVCaptureDevice.showSystemUserInterface(.microphoneModes) }
+}
+
 /// Records one microphone to an M4A file. Unlike AVAudioRecorder, which always uses the system's default
 /// input, this records from whichever input is chosen.
 final class MicrophoneRecorder: NSObject, AVCaptureFileOutputRecordingDelegate, @unchecked Sendable {

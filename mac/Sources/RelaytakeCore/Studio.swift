@@ -259,6 +259,8 @@ public struct StudioProject: Equatable, Sendable {
     public var clips: [AudioClip] = []
     /// Volume of the recording's own sound. 0 mutes it (for a full redub).
     public var originalVolume: Double = 1
+    /// The recording's sound cut on its own, or nil while it follows the video's cuts (see `OriginalAudio.swift`).
+    public var audioParts: [OriginalAudioPart]?
 
     /// The camera video recorded with this take, if any (fixed for the project), and how it is drawn.
     public let cameraSource: CameraSource?
@@ -348,6 +350,7 @@ public struct StudioProject: Equatable, Sendable {
     /// Makes room for `length` seconds of footage at `position`: later things move later, and anything
     /// that spans the spot stretches.
     private mutating func ripple(inserting length: Double, at position: Double) {
+        audioParts = clampedOriginalAudioParts(originalAudioParts(inserting: length, at: position))
         texts = texts.map { text in
             var text = text
             if text.start >= position { text.start += length }
@@ -368,6 +371,7 @@ public struct StudioProject: Equatable, Sendable {
     }
 
     private mutating func ripple(removing range: TimeSpan) {
+        audioParts = clampedOriginalAudioParts(originalAudioParts(removing: range))
         let removed = range.length
         func map(_ time: Double) -> Double {
             time <= range.start ? time : (time >= range.end ? time - removed : range.start)

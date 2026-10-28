@@ -18,7 +18,7 @@ open "build/Hot Take.app"
 
 the system asks for **Screen Recording** (and Microphone if you record your voice) the first time; after allowing screen recording, quit and reopen the app. Captions use the system's speech models, which the system downloads the first time you use a language.
 
-**Signing matters for permissions.** the system ties these grants to the app's code identity. The bundle script signs with an "Apple Development" certificate if one is in your keychain (or the one named in `RELAYTAKE_SIGN_IDENTITY`), so the grants survive rebuilds. A free developer certificate is enough. Without one it falls back to an ad-hoc signature, and the system forgets the Screen Recording grant after every rebuild. To reset the grants:
+**Signing matters for permissions.** the system ties these grants to the app's code identity. The bundle script signs with an "Apple Development" certificate if one is in your keychain (or the one named in `RELAYTAKE_SIGN_IDENTITY`), so the grants survive rebuilds. A free developer certificate is enough. Without one it falls back to an ad-hoc signature, and the system forgets the Screen Recording grant after every rebuild. The script refuses to build ad hoc unless you set `RELAYTAKE_ALLOW_ADHOC=1`, and it remembers the app's signing identity in `build/.signing-requirement`: if that identity ever changes it clears the old Screen Recording, Microphone and Camera grants so the next launch asks again, and `RELAYTAKE_RESET_PERMISSIONS=1 ./scripts/bundle.sh` does that on purpose. To reset the grants by hand:
 
 ```sh
 tccutil reset ScreenCapture org.relaytake.mac

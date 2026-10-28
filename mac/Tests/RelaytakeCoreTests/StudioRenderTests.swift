@@ -86,6 +86,23 @@ import Testing
         #expect(try await render(source, mixed) > loud * 1.15)  // adding music makes it louder
     }
 
+    @Test func removingAudioCutOnItsOwnLeavesSilenceWhileTheVideoKeepsItsLength() async throws {
+        let source = try await TestMedia.video(seconds: 6, color: (60, 60, 60), toneHz: 440)
+        var project = StudioProject(duration: 6)
+        project.spliceOriginalAudio(at: 2)
+        project.spliceOriginalAudio(at: 4)
+        project.removeOriginalAudioPart(project.originalAudioParts[1].id)
+        #expect(project.outputDuration == 6)
+
+        let out = TestMedia.tempURL("mp4")
+        try await StudioComposer.export(asset: AVURLAsset(url: source), project: project, to: out) { _ in }
+        let length = try await TestMedia.duration(of: out)
+        #expect(abs(length - 6) < 0.2, "the video is not cut: \(length)")
+        #expect(try await TestMedia.rms(of: out, from: 0.3, to: 1.7) > 0.25)
+        #expect(try await TestMedia.rms(of: out, from: 2.3, to: 3.7) < 0.03)
+        #expect(try await TestMedia.rms(of: out, from: 4.3, to: 5.7) > 0.25)
+    }
+
     @Test func shortMusicLoopsAndAVoiceoverStartsWhereItWasPlaced() async throws {
         let source = try await TestMedia.video(seconds: 6, color: (60, 60, 60))  // no sound of its own
         let jingle = try TestMedia.tone(seconds: 2, frequency: 330, amplitude: 0.6)

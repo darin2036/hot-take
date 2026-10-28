@@ -19,9 +19,13 @@ public struct StudioDraft: Codable, Equatable, Sendable {
     public var background: WindowBackground?
     public var clips: [AudioClip]
     public var originalVolume: Double
+    /// The recording's sound when it was cut apart from the video; nil while it follows the video.
+    public var audioParts: [OriginalAudioPart]?
     public var camera: CameraBubble
     /// Playhead, in seconds of the edited video.
     public var playhead: Double
+    /// Which saved version of a shared `.hottake` file this edit continues from, if it came from one.
+    public var sharedRevision: Int?
 
     public init(project: StudioProject, playhead: Double, savedAt: Date = Date()) {
         self.savedAt = savedAt
@@ -33,6 +37,7 @@ public struct StudioDraft: Codable, Equatable, Sendable {
         background = project.background
         clips = project.clips
         originalVolume = project.originalVolume
+        audioParts = project.audioParts
         camera = project.camera
         self.playhead = playhead
     }
@@ -49,6 +54,7 @@ public struct StudioDraft: Codable, Equatable, Sendable {
         project.background = background
         project.clips = clips.filter { fileExists($0.url) }
         project.originalVolume = min(1, max(0, originalVolume))
+        project.audioParts = project.clampedOriginalAudioParts(audioParts)
         // Without the camera video there is nothing for the bubble settings to apply to.
         if cameraSource != nil { project.camera = camera }
         return project
