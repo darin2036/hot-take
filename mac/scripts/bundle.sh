@@ -48,18 +48,12 @@ IDENTITY="${RELAYTAKE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 
 if [ -n "$IDENTITY" ]; then
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac "$APP"
   echo "Signed with: $IDENTITY"
-elif [ "${RELAYTAKE_ALLOW_ADHOC:-0}" = "1" ]; then
-  codesign --force --sign - "$APP"
-  echo "Signed ad-hoc (allowed by RELAYTAKE_ALLOW_ADHOC=1): the system will forget Screen Recording permission after every rebuild."
 else
-  # An ad-hoc build has a different identity from every signed one, so the system quietly stops honoring the
-  # Screen Recording grant (the switch in System Settings still looks on). Stop rather than do that by accident,
-  # for example when the keychain is locked or this runs somewhere the certificate is not available.
-  rm -rf "$APP"
-  echo "error: no Apple Development signing certificate is available, so the app was not built." >&2
-  echo "       Unlock the login keychain / add a free Apple Development certificate in Xcode, or set" >&2
-  echo "       RELAYTAKE_SIGN_IDENTITY, or RELAYTAKE_ALLOW_ADHOC=1 to accept losing permissions." >&2
-  exit 1
+  # No certificate: build ad hoc so the app still runs. An ad-hoc signature is different on every rebuild, so the
+  # system forgets the Screen Recording grant each time; a free "Apple Development" certificate avoids that.
+  codesign --force --sign - "$APP"
+  echo "Signed ad-hoc: the system will forget Screen Recording permission after every rebuild."
+  echo "A free Apple Development certificate (or RELAYTAKE_SIGN_IDENTITY) keeps it across rebuilds."
 fi
 
 # The system keys Screen Recording, Microphone and Camera grants to the app's "designated requirement". Remember
