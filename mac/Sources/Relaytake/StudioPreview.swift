@@ -75,6 +75,11 @@ struct StudioPreview: View {
                         .help("Click to point the zoom here")
                 }
 
+                // The selected arrow, box or blur gets handles to drag. (The mark itself is drawn into the picture.)
+                if case .shape(let id) = model.selection, let shape = model.project.shape(id) {
+                    ShapeEditor(shape: shape, frame: frame, clock: model.clock, model: model)
+                }
+
                 ForEach(model.project.texts) { text in
                     OverlayText(text: text, frame: frame, clock: model.clock, selected: model.selection == .text(text.id), model: model)
                 }
@@ -169,6 +174,92 @@ private struct OverlayText: View {
                     .onEnded { _ in model.endGesture() },
                 including: interactive ? .all : .none
             )
+    }
+}
+
+/// Handles over the selected mark: drag an end or corner to reshape it, or the middle to move it. They sit where the
+/// mark shows on screen, so a zoom or a backdrop that moves the picture moves them too. The picture itself redraws
+/// once a drag ends, the way it does for the camera.
+private struct ShapeEditor: View {
+    let shape: ShapeOverlay
+    let frame: CGRect
+    @ObservedObject var clock: StudioClock
+    @ObservedObject var model: StudioModel
+    /// The mark as it was when the drag began, so a drag is measured from its start.
+    @State private var base: ShapeOverlay?
+
+    private var canvas: CGSize { model.videoSize }
+    private var content: CGRect { CanvasLayout.contentRect(canvas: canvas, source: canvas, background: model.project.background) }
+    private var zoom: ZoomCamera.State { ZoomCamera.state(at: clock.time, zooms: model.project.zooms) }
+
+    private func onScreen(_ x: Double, _ y: Double) -> CGPoint {
+        let shown = CanvasLayout.shownPoint(forSource: x, y, content: content, canvas: canvas, zoom: zoom)
+        return CGPoint(x: frame.minX + shown.x * frame.width, y: frame.minY + shown.y * frame.height)
+    }
+
+    private func inPicture(_ location: CGPoint) -> CGPoint {
+        CanvasLayout.sourcePoint(
+            forShown: (location.x - frame.minX) / max(frame.width, 1), (location.y - frame.minY) / max(frame.height, 1),
+            content: content, canvas: canvas, zoom: zoom)
+    }
+
+    var body: some View {
+        let a = onScreen(shape.x1, shape.y1), b = onScreen(shape.x2, shape.y2)
+        let id = shape.id
+        ZStack {
+            if shape.kind == .arrow {
+                Path { path in path.move(to: a); path.addLine(to: b) }
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                    .allowsHitTesting(false)
+                handle(at: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), symbol: "arrow.up.and.down.and.arrow.left.and.right")
+                    .gesture(moveGesture(id))
+            } else {
+                let rect = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+                Rectangle().fill(Color.accentColor.opacity(0.001))
+                    .overlay(Rectangle().stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3])))
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
+                    .gesture(moveGesture(id))
+            }
+            handle(at: a, symbol: nil).gesture(cornerGesture(id, first: true))
+            handle(at: b, symbol: nil).gesture(cornerGesture(id, first: false))
+        }
+    }
+
+    private func handle(at point: CGPoint, symbol: String?) -> some View {
+        Circle().fill(Color.accentColor).frame(width: 14, height: 14)
+            .overlay(Circle().stroke(.white, lineWidth: 2))
+            .overlay { if let symbol { Image(systemName: symbol).font(.system(size: 7, weight: .bold)).foregroundStyle(.white) } }
+            .shadow(radius: 1.5)
+            .contentShape(Circle().inset(by: -6))
+            .position(x: point.x, y: point.y)
+    }
+
+    /// Drags one end or corner to where the pointer is.
+    private func cornerGesture(_ id: UUID, first: Bool) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named("preview"))
+            .onChanged { value in
+                model.beginGestureIfNeeded()
+                let point = inPicture(value.location)
+                model.live { $0.updateShape(id) { if first { $0.x1 = point.x; $0.y1 = point.y } else { $0.x2 = point.x; $0.y2 = point.y } } }
+            }
+            .onEnded { _ in model.endGesture() }
+    }
+
+    /// Slides the whole mark by how far the pointer has travelled.
+    private func moveGesture(_ id: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("preview"))
+            .onChanged { value in
+                model.beginGestureIfNeeded()
+                if base == nil { base = shape }
+                guard let start = base else { return }
+                let from = inPicture(value.startLocation), now = inPicture(value.location)
+                model.live { project in
+                    project.updateShape(id) { $0 = start }
+                    project.nudgeShape(id, byX: now.x - from.x, y: now.y - from.y)
+                }
+            }
+            .onEnded { _ in base = nil; model.endGesture() }
     }
 }
 

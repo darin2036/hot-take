@@ -17,6 +17,9 @@ public struct StudioDraft: Codable, Equatable, Sendable {
     public var captions: StudioCaptions?
     public var zooms: [ZoomSegment]
     public var background: WindowBackground?
+    /// Marks and click rings. Optional so drafts and shared files written before they existed still open.
+    public var shapes: [ShapeOverlay]?
+    public var clickHighlight: ClickHighlight?
     public var clips: [AudioClip]
     public var originalVolume: Double
     /// The recording's sound when it was cut apart from the video; nil while it follows the video.
@@ -35,6 +38,8 @@ public struct StudioDraft: Codable, Equatable, Sendable {
         captions = project.captions
         zooms = project.zooms
         background = project.background
+        shapes = project.shapes.isEmpty ? nil : project.shapes
+        clickHighlight = project.clickHighlight
         clips = project.clips
         originalVolume = project.originalVolume
         audioParts = project.audioParts
@@ -52,6 +57,8 @@ public struct StudioDraft: Codable, Equatable, Sendable {
         project.captions = captions
         project.zooms = zooms
         project.background = background
+        project.shapes = shapes ?? []
+        project.clickHighlight = clickHighlight
         project.clips = clips.filter { fileExists($0.url) }
         project.originalVolume = min(1, max(0, originalVolume))
         project.audioParts = project.clampedOriginalAudioParts(audioParts)

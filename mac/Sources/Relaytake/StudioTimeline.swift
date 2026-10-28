@@ -10,7 +10,7 @@ private enum Metrics {
     static let row: CGFloat = 34
     static let gap: CGFloat = 4
     static let pad: CGFloat = 10
-    static let rows = 6
+    static let rows = 7
     static var height: CGFloat { ruler + CGFloat(rows) * (row + gap) + 12 }
 }
 
@@ -30,6 +30,7 @@ struct StudioTimeline: View {
                     TrackLabel(symbol: "film", title: "Video")
                     TrackLabel(symbol: "textformat", title: "Text")
                     TrackLabel(symbol: "plus.magnifyingglass", title: "Zoom")
+                    TrackLabel(symbol: "pencil.tip.crop.circle", title: "Marks")
                     TrackLabel(symbol: "waveform", title: "Audio")
                     TrackLabel(symbol: "music.note", title: "Music")
                     TrackLabel(symbol: "mic", title: "Voiceover")
@@ -43,6 +44,7 @@ struct StudioTimeline: View {
                             .overlay(alignment: .topLeading) { TightenMarks(model: model, pps: pps) }
                         TextTrack(model: model, pps: pps)
                         ZoomTrack(model: model, pps: pps)
+                        MarksTrack(model: model, pps: pps)
                         OriginalTrack(model: model, pps: pps, total: total)
                         AudioClipTrack(model: model, kind: .music, pps: pps,
                                        hint: "Drop an audio file here, or choose Add Music")
@@ -278,7 +280,9 @@ private struct VideoTrack: View {
         .contextMenu {
             // Right-click works on whatever is under the pointer.
             let time = clamp((hoverX ?? 0) / pps)
-            Button("Splice Here", systemImage: "scissors") { model.seek(to: time); model.splice() }
+            Button("Splice All Tracks Here", systemImage: "scissors") { model.seek(to: time); model.splice(.all) }
+            Button("Splice Video Only Here", systemImage: "film") { model.seek(to: time); model.splice(.video) }
+            Button("Splice Audio Only Here", systemImage: "waveform") { model.seek(to: time); model.splice(.audio) }
             if let index = model.project.cuts.partIndex(atOutput: time) {
                 Button("Remove This Part", systemImage: "trash") {
                     model.removeSection(model.project.cuts.partSpans[index])
@@ -420,12 +424,57 @@ private struct ZoomTrack: View {
     }
 }
 
+// MARK: Marks track
+
+/// Arrows, boxes and blurs on the picture, and (when click rings are on) a dot at each click.
+private struct MarksTrack: View {
+    @ObservedObject var model: StudioModel
+    let pps: CGFloat
+
+    var body: some View {
+        let lanes = model.project.shapeLanes()
+        let laneHeight = (Metrics.row - 8) / 2
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12))
+            if model.project.shapes.isEmpty, model.project.clickHighlight == nil {
+                Text("Choose Mark to add an arrow, box or blur").font(.caption).foregroundStyle(.tertiary).padding(.leading, 8)
+                    .frame(height: Metrics.row)
+            }
+            if let highlight = model.project.clickHighlight {
+                ForEach(Array(ClickHighlightTimeline(highlight: highlight, cuts: model.project.cuts).moments.enumerated()), id: \.offset) { _, moment in
+                    Circle().fill(highlight.color.color).frame(width: 5, height: 5)
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
+                        .offset(x: moment.time * pps - 3, y: Metrics.row - 7)
+                        .allowsHitTesting(false)
+                }
+            }
+            ForEach(model.project.shapes) { shape in
+                TimelineBlock(
+                    start: shape.start, end: shape.end, pps: pps, height: laneHeight, yOffset: 1.5 + CGFloat(min(lanes[shape.id] ?? 0, 1)) * (laneHeight + 1),
+                    selected: model.selection == .shape(shape.id), tint: shape.color.color,
+                    onSelect: { model.select(.shape(shape.id)) },
+                    onBegin: { model.beginGestureIfNeeded() },
+                    onMove: { newStart in model.live { $0.moveShape(shape.id, to: newStart) } },
+                    onResize: { start, end in model.live { $0.updateShape(shape.id) { $0.start = start; $0.end = end } } },
+                    onEnd: { model.endGesture() }
+                ) {
+                    Label(shape.kind.title, systemImage: shape.kind.symbol)
+                        .labelStyle(.titleAndIcon).font(.system(size: 9, weight: .semibold)).lineLimit(1).padding(.horizontal, 6)
+                        .foregroundStyle(.white).shadow(color: .black.opacity(0.5), radius: 1)
+                }
+            }
+        }
+        .frame(height: Metrics.row)
+    }
+}
+
 // MARK: Original audio
 
 private struct OriginalTrack: View {
     @ObservedObject var model: StudioModel
     let pps: CGFloat
     let total: Double
+    @State private var hoverX: CGFloat?
 
     var body: some View {
         let selected = model.selection == .original
@@ -473,6 +522,27 @@ private struct OriginalTrack: View {
         .frame(height: Metrics.row)
         .contentShape(Rectangle())
         .onTapGesture { model.selection = .original }
+        .onContinuousHover { phase in
+            if case .active(let point) = phase { hoverX = point.x } else { hoverX = nil }
+        }
+        .contextMenu {
+            let time = min(max(0, (hoverX ?? 0) / pps), total)
+            Button("Splice Audio Only Here", systemImage: "waveform") { model.seek(to: time); model.splice(.audio) }
+            Button("Splice All Tracks Here", systemImage: "scissors") { model.seek(to: time); model.splice(.all) }
+            let parts = model.project.originalAudioParts
+            if !model.project.originalAudioFollowsVideo, let index = parts.firstIndex(where: { time >= $0.start && time < $0.end }) {
+                if model.project.isOriginalAudioSplice(afterPart: index - 1) {
+                    Button("Remove Audio Splice Before", systemImage: "arrow.left.and.right.square") { model.removeAudioSplice(afterPart: index - 1) }
+                }
+                if model.project.isOriginalAudioSplice(afterPart: index) {
+                    Button("Remove Audio Splice After", systemImage: "arrow.left.and.right.square") { model.removeAudioSplice(afterPart: index) }
+                }
+                Button("Remove This Part of the Audio", systemImage: "trash") { model.selection = .audioPart(parts[index].id); model.deleteSelection() }
+            }
+            if !model.project.originalAudioFollowsVideo {
+                Button("Make Audio Follow the Video", systemImage: "link") { model.relinkOriginalAudio() }
+            }
+        }
     }
 }
 

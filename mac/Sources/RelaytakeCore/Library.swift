@@ -18,6 +18,8 @@ public struct TakeEntry: Identifiable, Equatable, Sendable {
     /// The file name of the recording this one is a copy of, if it is: recorded when the copy was saved, or
     /// worked out from "(edited)" in the name for older copies. It may not exist any more.
     public var originalName: String? = nil
+    /// The moment chosen as this take's picture in the library, if any.
+    public var thumbnailTime: Double? = nil
 
     /// Whether `text` matches the title, summary, tags or folder name (case-insensitive).
     public func matches(_ text: String) -> Bool {
@@ -80,7 +82,8 @@ public enum TakeLibrary {
                     summary: metadata?.summary ?? "",
                     tags: metadata?.tags ?? [],
                     hasCaptions: fileManager.fileExists(atPath: files.captions.path),
-                    originalName: metadata?.derivedFrom ?? TakeFamilies.inferredOriginalName(of: files.baseName)))
+                    originalName: metadata?.derivedFrom ?? TakeFamilies.inferredOriginalName(of: files.baseName),
+                    thumbnailTime: metadata?.thumbnailTime))
         }
         return entries.sorted { $0.created > $1.created }
     }
@@ -119,8 +122,12 @@ public enum TakeLibrary {
     }
 
     /// Saves a corrected transcript, and rewrites the captions file if the take has one so the two agree.
+    /// Translations were made from the old words, so they are dropped.
     public static func saveTranscript(_ segments: [CaptionSegment], for entry: TakeEntry) throws {
-        try update(entry) { $0.transcript = segments }
+        try update(entry) {
+            $0.transcript = segments
+            $0.translations = [:]
+        }
         if FileManager.default.fileExists(atPath: entry.files.captions.path) {
             try Captions.webVTT(segments).write(to: entry.files.captions, atomically: true, encoding: .utf8)
         }
@@ -163,7 +170,7 @@ public enum TakeLibrary {
 
     /// Moves the take's files to the Trash. Never deletes permanently.
     public static func trash(_ entry: TakeEntry, fileManager: FileManager = .default) throws {
-        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft]
+        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft, entry.files.agentDirectory]
             + entry.files.audioFiles()
         where fileManager.fileExists(atPath: url.path) {
             try fileManager.trashItem(at: url, resultingItemURL: nil)
@@ -230,7 +237,7 @@ public enum TakeLibrary {
             (entry.files.video, moved.video), (entry.files.captions, moved.captions),
             (entry.files.metadata, moved.metadata),
             (entry.files.screenOriginal, moved.screenOriginal), (entry.files.cameraOriginal, moved.cameraOriginal),
-            (entry.files.draft, moved.draft),
+            (entry.files.draft, moved.draft), (entry.files.agentDirectory, moved.agentDirectory),
         ]
         // Audio that came with a shared take moves with it.
         let audioPairs = entry.files.audioFiles().map { from -> (URL, URL) in

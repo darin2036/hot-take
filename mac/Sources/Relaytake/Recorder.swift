@@ -44,13 +44,17 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
     var onUnexpectedStop: (() -> Void)?
     private var streamEnded = false
 
-    func start(to url: URL, target: RecordingTarget, microphone: Bool, microphoneID: String = "", systemAudio: Bool, includeOwnWindows: Bool = false, quality: EncodingSettings = EncodingSettings(preset: .medium)) async throws {
+    func start(to url: URL, target: RecordingTarget, microphone: Bool, microphoneID: String = "", systemAudio: Bool, includeOwnWindows: Bool = false, hideNotifications: Bool = true, quality: EncodingSettings = EncodingSettings(preset: .medium)) async throws {
         // First call triggers the system's Screen Recording permission prompt.
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         // Keep Hot Take's own windows (library, control bar) out of the video, unless the user is recording
         // the app itself. Then its normal windows stay in (those open now); the floating control bar and
         // countdown still do not appear.
-        let ours = content.applications.filter { $0.bundleIdentifier == Bundle.main.bundleIdentifier }
+        // Notification Center is left out too when asked, so a banner that pops up is not in the video. (Whether
+        // banners are really its windows has to be checked on a Mac; see the README.)
+        let leftOut = Set(CaptureExclusions.bundleIdentifiers(
+            ownApp: Bundle.main.bundleIdentifier, includeOwnApp: false, hideNotifications: hideNotifications))
+        let ours = content.applications.filter { leftOut.contains($0.bundleIdentifier) }
         let keptWindows = includeOwnWindows
             ? content.windows.filter { $0.owningApplication?.bundleIdentifier == Bundle.main.bundleIdentifier && $0.windowLayer == 0 }
             : []

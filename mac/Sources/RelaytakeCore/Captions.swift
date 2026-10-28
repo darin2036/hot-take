@@ -34,7 +34,15 @@ public enum Captions {
     public static func cues(from segments: [CaptionSegment], maxCharacters: Int = 80) -> [CaptionSegment] {
         var cues: [CaptionSegment] = []
         for segment in segments {
-            let words = segment.text.split(whereSeparator: \.isWhitespace).map(String.init)
+            // Chinese and Japanese have no spaces, so one long "word" is cut into line-sized pieces.
+            let words = segment.text.split(whereSeparator: \.isWhitespace).flatMap { word -> [String] in
+                guard word.count > maxCharacters, !word.allSatisfy(\.isASCII) else { return [String(word)] }
+                return stride(from: 0, to: word.count, by: maxCharacters).map { start in
+                    let from = word.index(word.startIndex, offsetBy: start)
+                    let to = word.index(from, offsetBy: min(maxCharacters, word.count - start))
+                    return String(word[from..<to])
+                }
+            }
             guard !words.isEmpty else { continue }
 
             // Even out line lengths so a long sentence doesn't end in a two-word orphan.

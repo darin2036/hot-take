@@ -63,11 +63,16 @@ public struct StudioCaptions: Codable, Equatable, Sendable {
     public var style: CaptionStyle
     public var position: CaptionPosition
     public var cues: [CaptionSegment]
+    /// The language the cues are in when they are a translation of the transcript ("es", "ja"). Nil is what was said.
+    public var language: String?
 
-    public init(style: CaptionStyle = .classic, position: CaptionPosition = .bottom, cues: [CaptionSegment]) {
+    public init(
+        style: CaptionStyle = .classic, position: CaptionPosition = .bottom, cues: [CaptionSegment], language: String? = nil
+    ) {
         self.style = style
         self.position = position
         self.cues = cues
+        self.language = language
     }
 }
 

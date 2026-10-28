@@ -56,6 +56,7 @@ enum Pipeline {
             if let existing = TakeLibrary.metadata(for: take) {
                 metadata.tags = existing.tags
                 metadata.notes = existing.notes
+                metadata.chapters = existing.chapters
                 metadata.keepCapture(of: existing)
                 if summary.isEmpty { metadata.summary = existing.summary }
                 if title == take.baseName, !existing.title.isEmpty { metadata.title = existing.title }

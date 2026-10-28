@@ -85,7 +85,7 @@ struct StudioShareButton: View {
     /// One `.hottake` file with the recording and the edit, for a teammate to open and carry on.
     private var projectButton: some View {
         Button { model.shareProject() } label: { Label("Save Project", systemImage: "shippingbox") }
-            .help("Save the recording and your edit as one Hot Take file a teammate can open and keep editing")
+            .help("Save the recording and your edit as one Hot Take file you can open later or hand to a teammate (File ▸ Save Project, ⌘S)")
             .disabled(!model.ready || model.saveProgress != nil)
     }
 

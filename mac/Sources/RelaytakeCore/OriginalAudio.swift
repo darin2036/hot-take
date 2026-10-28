@@ -53,12 +53,51 @@ public extension StudioProject {
         return true
     }
 
+    /// Breaks the video at `time` and leaves the sound whole: the sound stops following the video's cuts, so
+    /// it plays on unbroken across the new splice.
+    @discardableResult
+    mutating func spliceVideoOnly(at time: Double) -> Bool {
+        let sound = originalAudioParts
+        guard cuts.splice(atOutput: time) else { return false }
+        audioParts = sound
+        return true
+    }
+
+    /// Breaks every track at `time`: the video and the recording's sound (which, if it already has cuts of its
+    /// own, is cut there too). Returns false when neither could be cut there.
+    @discardableResult
+    mutating func spliceAllTracks(at time: Double) -> Bool {
+        let video = cuts.splice(atOutput: time)
+        let sound = audioParts == nil ? false : spliceOriginalAudio(at: time)
+        return video || sound
+    }
+
     /// Takes one part of the sound out, leaving silence. The video and everything else stays where it is.
     @discardableResult
     mutating func removeOriginalAudioPart(_ id: UUID) -> Bool {
         var parts = originalAudioParts
         guard let index = parts.firstIndex(where: { $0.id == id }) else { return false }
         parts.remove(at: index)
+        audioParts = parts
+        return true
+    }
+
+    /// Whether the break after sound part `index` is a plain splice (the parts touch, on the timeline and in the
+    /// recording), as opposed to a gap where sound was taken out.
+    func isOriginalAudioSplice(afterPart index: Int) -> Bool {
+        let parts = originalAudioParts
+        guard parts.indices.contains(index), parts.indices.contains(index + 1) else { return false }
+        return abs(parts[index].end - parts[index + 1].start) < 1e-6
+            && abs(parts[index].source.end - parts[index + 1].source.start) < 1e-6
+    }
+
+    /// Joins two parts of the sound that were only spliced, undoing the break.
+    @discardableResult
+    mutating func removeOriginalAudioSplice(afterPart index: Int) -> Bool {
+        guard isOriginalAudioSplice(afterPart: index) else { return false }
+        var parts = originalAudioParts
+        parts[index].source.end = parts[index + 1].source.end
+        parts.remove(at: index + 1)
         audioParts = parts
         return true
     }

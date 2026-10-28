@@ -21,6 +21,19 @@ enum Pref {
     static let presenterSize = "presenterSize"
     static let captions = "captions"
     static let summary = "summary"
+    /// Leave Notification Center out of screen and area recordings, so banners are not in the video.
+    static let hideNotifications = "hideNotifications"
+    /// Master switch for the global shortcuts.
+    static let hotkeysEnabled = "hotkeysEnabled"
+    /// The display recorded last, which Quick Record and screenshots use again.
+    static let lastDisplay = "lastRecordedDisplay"
+    static let speakerNotes = "speakerNotes"
+    static let speakerNotesSize = "speakerNotesSize"
+    static let playbackSpeed = "playbackSpeed"
+    /// When a recording stops, turn it into a request for a coding agent and copy it. Off by default.
+    static let recordForAgent = "recordForAgent"
+    /// Set once the first-launch welcome has played, so it only appears the first time.
+    static let welcomed = "welcomed"
 }
 
 /// Everything configurable lives here, not in the menu-bar dropdown. Panes follow the system's own
@@ -90,6 +103,8 @@ private struct RecordingPane: View {
             } header: {
                 Text("Audio")
             }
+
+            ShortcutsSection()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in microphones = Microphone.available() }

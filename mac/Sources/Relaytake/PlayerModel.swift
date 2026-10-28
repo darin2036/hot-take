@@ -7,11 +7,25 @@ final class PlayerModel: ObservableObject {
     let player = AVPlayer()
     @Published var time: Double = 0
     @Published var duration: Double = 0
+    /// How fast it plays, kept between recordings. Pitch is kept as it is, so a faster take is not squeaky.
+    @Published var speed = PlaybackSpeed.valid(UserDefaults.standard.double(forKey: Pref.playbackSpeed)) {
+        didSet {
+            UserDefaults.standard.set(speed, forKey: Pref.playbackSpeed)
+            applySpeed()
+        }
+    }
 
     private var observer: Any?
     private var url: URL?
 
+    private func applySpeed() {
+        player.defaultRate = Float(speed)
+        // Only a player that is playing changes pace now; setting the rate of a paused one would start it.
+        if player.timeControlStatus != .paused { player.rate = Float(speed) }
+    }
+
     init() {
+        applySpeed()
         observer = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
         ) { [weak self] value in

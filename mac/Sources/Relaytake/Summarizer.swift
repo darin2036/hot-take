@@ -26,6 +26,22 @@ enum Summarizer {
         return MetadataPrompt.clean(response.content, for: field)
     }
 
+    /// What the person in a walkthrough wants a coding agent to do. Nil when the reply had nothing usable.
+    static func agentRequest(transcript: String) async throws -> AgentBrief.Request? {
+        let session = LanguageModelSession(instructions: AgentPrompt.instructions)
+        let response = try await session.respond(
+            to: AgentPrompt.prompt(transcript: transcript), options: GenerationOptions(temperature: 0.2))
+        return AgentPrompt.parse(response.content)
+    }
+
+    /// Names one section of a recording. Nil when the reply is not a usable title; the caller keeps its own name.
+    static func titleChapter(_ section: [CaptionSegment], number: Int, of count: Int) async throws -> String? {
+        let session = LanguageModelSession(instructions: ChapterPrompt.instructions)
+        let response = try await session.respond(
+            to: ChapterPrompt.prompt(for: section, number: number, of: count), options: GenerationOptions(temperature: 0.2))
+        return ChapterPrompt.parse(response.content)
+    }
+
     /// Recommends cuts by segment number; times come from the transcript, never from the model.
     static func recommendCuts(segments: [CaptionSegment]) async throws -> [EditSuggestion] {
         let session = LanguageModelSession(instructions: EditPrompt.instructions)

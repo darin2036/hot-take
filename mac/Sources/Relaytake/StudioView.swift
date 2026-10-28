@@ -86,11 +86,14 @@ struct StudioView: View {
         }
         .onKeyPress("[") { Self.isTyping ? .ignored : { model.trimBeforePlayhead(); return .handled }() }
         .onKeyPress("]") { Self.isTyping ? .ignored : { model.trimAfterPlayhead(); return .handled }() }
-        .confirmationDialog("Close the Studio?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("Keep Draft and Close") { close() }
+        .confirmationDialog("Save your project before closing?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Save Project…") {
+                model.shareProject { saved in if saved { model.discardDraft(); close() } }
+            }
             Button("Discard Edits", role: .destructive) { model.discardDraft(); close() }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your edits are saved as you work, so they are here when you come back. Discard them to start over.")
+            Text("Save Project puts the recording and your edit in one file you can open later or hand to someone. Discard throws the edit away.")
         }
     }
 
@@ -104,7 +107,7 @@ struct StudioView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            Button { model.hasUnsavedChanges ? (confirmDiscard = true) : close() } label: {
+            Button { model.needsProjectSave ? (confirmDiscard = true) : { model.discardDraft(); close() }() } label: {
                 Label("Done", systemImage: "chevron.left")
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -222,6 +225,7 @@ private struct Transport: View {
     @State private var showBackground = false
     @State private var showCamera = false
     @State private var showZoom = false
+    @State private var showMarks = false
     @AppStorage("autoZoomAmount") private var zoomAmount = 1.8
     @AppStorage("tightenPause") private var pauseSeconds = 2.0
     @State private var fromPlayhead = false
@@ -237,10 +241,21 @@ private struct Transport: View {
             .disabled(!model.ready)
             Text("\(timeLabel(clock.time)) / \(timeLabel(model.project.outputDuration))")
                 .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
-            Button { model.splice() } label: { Label("Splice", systemImage: "scissors") }
-                .keyboardShortcut("b", modifiers: .command)
-                .help("Break the video at the playhead (S or ⌘B). Then click a part to remove it, or drag a splice to move it. With a text, zoom or audio clip selected, it splits that item in two instead. [ and ] drop everything before or after the playhead.")
-                .disabled(!model.ready)
+            Menu {
+                // Choosing a mode splices with it and becomes what the button itself does from now on.
+                ForEach(StudioModel.SpliceTarget.allCases, id: \.self) { mode in
+                    Button(mode.title, systemImage: mode.symbol) { model.spliceMode = mode; model.splice(mode) }
+                        .help(mode.help)
+                }
+            } label: {
+                Label("Splice \(model.spliceTarget)", systemImage: model.spliceSymbol)
+            } primaryAction: {
+                model.splice()
+            }
+            .fixedSize()
+            .keyboardShortcut("b", modifiers: .command)
+            .help("Break the track you have selected at the playhead (S or ⌘B): the Audio track, or a text, zoom, music or voiceover clip. With nothing selected it breaks every track, video and sound together. The arrow beside it picks the video or the audio alone, and the button then keeps that choice. [ and ] drop everything before or after the playhead.")
+            .disabled(!model.ready)
 
             Spacer(minLength: 8)
 
@@ -296,6 +311,13 @@ private struct Transport: View {
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
                 .hoverLabel(iconOnly ? "Auto Zoom" : nil)
                 .popover(isPresented: $showZoom, arrowEdge: .top) { zoomOptions }
+            Button { showMarks = true } label: {
+                Label("Mark", systemImage: model.project.shapes.isEmpty && model.project.clickHighlight == nil ? "pencil.tip.crop.circle" : "pencil.tip.crop.circle.fill")
+            }
+            .help("Draw an arrow, box or blur on the picture, or ring your clicks")
+                .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
+                .hoverLabel(iconOnly ? "Mark" : nil)
+                .popover(isPresented: $showMarks, arrowEdge: .top) { markOptions }
             Button { model.chooseMusic() } label: { Label("Add Music", systemImage: "music.note") }
                 .help("Choose a song to play under the video. You can also drop an audio file on the timeline.")
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
@@ -486,6 +508,48 @@ private struct Transport: View {
         .padding(16).frame(width: 340)
     }
 
+    /// Arrows, boxes and blurs, and rings at the clicks noted while recording.
+    private var markOptions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Mark").font(.headline)
+            Text("Add one at the playhead, then drag its handles on the picture to put it where you want. Marks stay on what they point at when the picture zooms, and are drawn in when you save a copy.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                ForEach(ShapeOverlay.Kind.allCases, id: \.self) { kind in
+                    Button { model.addShape(kind); showMarks = false } label: { Label(kind.title, systemImage: kind.symbol) }
+                        .help(kind == .blur ? "Blur out a region, such as a name or an email address" : "Add a \(kind.title.lowercased())")
+                }
+            }
+            Divider()
+            Toggle("Ring each click", isOn: Binding(
+                get: { model.project.clickHighlight != nil }, set: { model.setClickHighlightsOn($0) }))
+                .disabled(model.clicks.isEmpty)
+                .help("A ring opens where the mouse was clicked while recording")
+            if model.clicks.isEmpty {
+                Text("No clicks were noted for this recording.").font(.caption).foregroundStyle(.secondary)
+            } else if let highlight = model.project.clickHighlight {
+                HStack(spacing: 8) {
+                    Text("Color").frame(width: 60, alignment: .leading)
+                    ForEach(Array(TextColor.presets.prefix(7).enumerated()), id: \.offset) { _, preset in
+                        swatch(preset.color, name: preset.name, selected: highlight.color == preset.color) {
+                            model.changeClickHighlight { $0.color = preset.color }
+                        }
+                    }
+                }
+                HStack {
+                    Text("Size").frame(width: 60, alignment: .leading)
+                    Slider(value: Binding(
+                        get: { highlight.size },
+                        set: { value in model.changeClickHighlight(coalescing: "ringsize") { $0.size = value } }),
+                        in: ClickHighlight.sizeRange)
+                }
+                Text("\(highlight.clicks.count) click\(highlight.clicks.count == 1 ? "" : "s") noted. A click in a section you cut out has no ring.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16).frame(width: 340)
+    }
+
     private var captionOptions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Captions").font(.headline)
@@ -516,6 +580,13 @@ private struct Transport: View {
                 Picker("Position", selection: Binding(get: { captions.position }, set: { model.setCaptionPosition($0) })) {
                     ForEach(CaptionPosition.allCases) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented)
+                if !model.captionTranslations.isEmpty {
+                    Picker("Language", selection: Binding(get: { captions.language }, set: { model.setCaptionLanguage($0) })) {
+                        Text("As spoken").tag(String?.none)
+                        ForEach(model.captionTranslations, id: \.self) { Text(CaptionTranslator.name(for: $0)).tag(Optional($0)) }
+                    }
+                    .help("Translations are made on the Transcript tab.")
+                }
                 Text("Saved into the picture when you save a copy, so they can't be turned off afterward. Your original is never changed.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
@@ -582,13 +653,15 @@ struct StudioProperties: View {
     @ViewBuilder private var content: some View {
         switch model.selection {
         case .none:
-            Label("Click a clip to change it. To cut, move the playhead and Splice (S), then click a part and press Delete.", systemImage: "hand.point.up.left")
+            Label("Click a clip to change it. To cut, move the playhead and Splice (S) to break every track, or select the Audio track first to break only the sound. Then click a part and press Delete.", systemImage: "hand.point.up.left")
                 .font(.callout).foregroundStyle(.secondary).lineLimit(1)
         case .range(let range): rangeBar(range)
         case .text(let id):
             if let text = model.project.text(id) { textBar(text) }
         case .zoom(let id):
             if let zoom = model.project.zoom(id) { zoomBar(zoom) }
+        case .shape(let id):
+            if let shape = model.project.shape(id) { shapeBar(shape) }
         case .clip(let id):
             if let clip = model.project.clip(id) { clipBar(clip) }
         case .original: originalBar(part: nil)
@@ -666,6 +739,45 @@ struct StudioProperties: View {
         }
     }
 
+    // An arrow, box or blur
+    private func shapeBar(_ shape: ShapeOverlay) -> some View {
+        let id = shape.id
+        return HStack(spacing: 12) {
+            Image(systemName: shape.kind.symbol)
+            Text(shape.kind.title).fontWeight(.semibold)
+            if shape.kind != .blur {
+                HStack(spacing: 6) {
+                    ForEach(Array(TextColor.presets.prefix(7).enumerated()), id: \.offset) { _, preset in
+                        swatch(preset.color, name: preset.name, selected: shape.color == preset.color) {
+                            model.changeShape(id) { $0.color = preset.color }
+                        }
+                    }
+                }
+                Slider(value: Binding(
+                    get: { shape.lineWidth },
+                    set: { value in model.changeShape(id, coalescing: "line-\(id)") { $0.lineWidth = value } }),
+                    in: ShapeOverlay.lineWidthRange)
+                    .frame(width: 100).help("How thick the line is")
+            } else {
+                Slider(value: Binding(
+                    get: { shape.blurRadius },
+                    set: { value in model.changeShape(id, coalescing: "blur-\(id)") { $0.blurRadius = value } }),
+                    in: ShapeOverlay.blurRange)
+                    .frame(width: 140).help("How strongly it blurs")
+            }
+            Stepper(value: Binding(
+                get: { shape.length },
+                set: { value in model.changeShape(id, coalescing: "slen-\(id)") { $0.end = $0.start + value } }),
+                in: ShapeOverlay.minimumLength...max(ShapeOverlay.minimumLength, model.project.outputDuration), step: 0.5) {
+                Text("\(String(format: "%.1f", shape.length)) s").monospacedDigit()
+            }
+            .help("How long it stays on screen")
+            Text("Drag the handles on the picture").font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Button(role: .destructive) { model.deleteSelection() } label: { Image(systemName: "trash") }.help("Remove this mark").hoverLabel("Remove Mark", anchor: .trailing)
+        }
+    }
+
     // Music or voiceover
     private func clipBar(_ clip: AudioClip) -> some View {
         let id = clip.id
@@ -715,8 +827,17 @@ struct StudioProperties: View {
             Toggle("Mute", isOn: Binding(
                 get: { model.project.originalVolume == 0 },
                 set: { muted in model.edit { $0.originalVolume = muted ? 0 : 1 } }))
+            Text("Splice (S) cuts only this sound.").font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if part != nil {
+            if let part, let index = model.project.audioParts?.firstIndex(where: { $0.id == part.id }) {
+                if model.project.isOriginalAudioSplice(afterPart: index - 1) {
+                    Button("Join Previous") { model.removeAudioSplice(afterPart: index - 1) }
+                        .help("Undo the splice before this part")
+                }
+                if model.project.isOriginalAudioSplice(afterPart: index) {
+                    Button("Join Next") { model.removeAudioSplice(afterPart: index) }
+                        .help("Undo the splice after this part")
+                }
                 Button("Remove") { model.deleteSelection() }
                     .help("Take this sound out and leave silence; the picture stays (Delete)")
             }

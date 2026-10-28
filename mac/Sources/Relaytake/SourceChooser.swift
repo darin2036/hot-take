@@ -24,6 +24,7 @@ struct SourceChooser: View {
     /// The camera last used, so switching the presenter back on picks it again.
     @AppStorage("recordingCameraLast") private var lastCameraID = ""
     @AppStorage(Pref.includeOwnWindows) private var includeOwnWindows = false
+    @AppStorage(Pref.recordForAgent) private var forAgent = false
     @AppStorage(Pref.microphoneDevice) private var microphoneID = ""
     @AppStorage(Pref.cameraDevice) private var cameraID = ""
     @State private var cameras = CameraChoice.available()
@@ -49,23 +50,22 @@ struct SourceChooser: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Record").font(.title2.bold())
-            HStack {
-                Picker("Record", selection: $mode) {
-                    Text("Screen").tag("screen")
-                    Text("Window or app").tag("window")
-                    Text("Area").tag("area")
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 340)
-                Spacer()
-                if mode == "screen", screens.count > 1 {
-                    Button("Show screen numbers", systemImage: "number.square") { ScreenIdentifiers.shared.show(screens) }
-                        .controlSize(.small)
-                        .help("Briefly puts each screen's number on that screen.")
-                }
-            }
+            Picker("Record", selection: $mode) {
+                Text("Screen").tag("screen")
+                Text("Window or app").tag("window")
+                Text("Area").tag("area")
+                Text("Camera").tag("camera")
+            }.pickerStyle(.segmented).labelsHidden()
 
             switch mode {
             case "screen": screenSection
             case "window": windowSection
+            case "camera":
+                Text(chosenCamera.isEmpty
+                     ? "Choose a camera under Presenter below. A camera take records you and your microphone, with no screen."
+                     : "Records your camera and your microphone, with no screen. Computer audio is not part of a camera take, and it cannot be paused.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
             default:
                 Text("Drag over any part of your screen after you press Select area. The area stays fixed, even if a window moves.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -79,9 +79,21 @@ struct SourceChooser: View {
                 if !previewMessage.isEmpty { Text(previewMessage).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                 Spacer()
                 Button("Cancel") { recorder.choosing = false }.keyboardShortcut(.cancelAction)
-                Button(mode == "screen" ? "Start recording" : mode == "window" ? "Start recording" : "Select area…") {
-                    ScreenIdentifiers.shared.hide()
-                    if mode == "screen", let selected { recorder.begin(.screen(selected)) }
+                if mode != "camera" {
+                    Button("Screenshot", systemImage: "camera.viewfinder") {
+                        if mode == "screen", let selected { recorder.takeScreenshot(.screen(selected)) }
+                        else if mode == "window", let window = windows.first(where: { $0.id == selectedWindow }) {
+                            recorder.takeScreenshot(.window(SCContentFilter(desktopIndependentWindow: window.window)))
+                        }
+                        else if mode == "area" { recorder.takeScreenshot(.area) }
+                    }
+                    .help(mode == "area" ? "Drag over the area, and a picture of it is saved." : "Save a picture of this instead of recording it. It goes in the folder you are viewing.")
+                    .disabled((mode == "screen" && !screens.contains { $0.displayID == selected })
+                        || (mode == "window" && !windows.contains { $0.id == selectedWindow }))
+                }
+                Button(mode == "area" ? "Select area…" : "Start recording") {
+                    if mode == "camera" { recorder.begin(.camera) }
+                    else if mode == "screen", let selected { recorder.begin(.screen(selected)) }
                     else if mode == "window", let window = windows.first(where: { $0.id == selectedWindow }) {
                         recorder.begin(.window(SCContentFilter(desktopIndependentWindow: window.window)))
                     }
@@ -90,15 +102,19 @@ struct SourceChooser: View {
                 .help(mode == "window" ? "Record the window you selected after a 3–2–1 countdown." : mode == "area" ? "Drag over the area you want to record." : "Record the selected screen after a 3–2–1 countdown.")
                 .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
                 .disabled((mode == "screen" && !screens.contains { $0.displayID == selected })
-                    || (mode == "window" && !windows.contains { $0.id == selectedWindow }))
+                    || (mode == "window" && !windows.contains { $0.id == selectedWindow })
+                    || (mode == "camera" && chosenCamera.isEmpty))
             }
         }
         .padding(20).frame(width: 600)
+        .onChange(of: mode) { _, new in
+            // A camera take needs a camera, so the Presenter switch is turned on for it.
+            if new == "camera", chosenCamera.isEmpty, !cameras.isEmpty { presenterOn.wrappedValue = true }
+        }
         .task(id: "\(refresh)-\(mode)") { await loadSources() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens
             if !screens.contains(where: { $0.displayID == selected }) { selected = nil }
-            ScreenIdentifiers.shared.hide()
             refresh = UUID()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
@@ -118,7 +134,6 @@ struct SourceChooser: View {
             if noAudio { microphoneOn = false; systemAudio = false; noAudio = false }
         }
         .onDisappear {
-            ScreenIdentifiers.shared.hide()
             // Closing the sheet to start a recording must not switch the camera off just before it is needed.
             if recorder.phase == .idle { recorder.camera.stopPreview() }
         }
@@ -146,9 +161,11 @@ struct SourceChooser: View {
             }
             if microphoneOn { MicrophoneModeRow(owner: "record-sheet", deviceID: microphoneID, asksForAccess: true).padding(.leading, 30).padding(.bottom, 8) }
             Divider().padding(.leading, 30)
-            sourceRow("Computer audio", symbol: systemAudio ? "speaker.wave.2.fill" : "speaker.slash", isOn: $systemAudio) { EmptyView() }
-                .help("Also record the sound your Mac plays.")
-            Divider().padding(.leading, 30)
+            if mode != "camera" {
+                sourceRow("Computer audio", symbol: systemAudio ? "speaker.wave.2.fill" : "speaker.slash", isOn: $systemAudio) { EmptyView() }
+                    .help("Also record the sound your Mac plays.")
+                Divider().padding(.leading, 30)
+            }
             sourceRow("Presenter", symbol: presenterOn.wrappedValue ? "person.crop.circle.fill" : "person.crop.circle", isOn: presenterOn) {
                 devicePicker("Camera", selection: Binding(get: { chosenCamera }, set: { cameraID = $0 }),
                              choices: cameras.map { ($0.id, $0.name) })
@@ -157,6 +174,12 @@ struct SourceChooser: View {
             .disabled(cameras.isEmpty)
             if presenterOn.wrappedValue { presenterDetail.padding(.leading, 40).padding(.bottom, 10) }
             Divider().padding(.leading, 30)
+            if mode != "camera" {
+                sourceRow("For an agent", symbol: "sparkles.rectangle.stack", isOn: $forAgent) { EmptyView() }
+                    .help("When you stop, copy the recording as a request for a coding agent: what you said, with a "
+                        + "picture at each click. Talk through what you want while you show it. Made on this Mac.")
+                Divider().padding(.leading, 30)
+            }
             HStack(spacing: 10) {
                 Image(systemName: "film").frame(width: 20).foregroundStyle(.secondary)
                 Text("File size")
@@ -311,7 +334,7 @@ struct SourceChooser: View {
             Text("A browser is recorded as the window shows it, so switch to the tab you want first. the system doesn't let apps record one background tab.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button("Use system picker…") { ScreenIdentifiers.shared.hide(); recorder.begin(.windowOrApp) }
+            Button("Use system picker…") { recorder.begin(.windowOrApp) }
                 .controlSize(.small)
                 .help("Choose a whole app (all its windows) in the system picker.")
         }
@@ -400,34 +423,5 @@ struct SourceChooser: View {
                 windowPreviews[choice.id] = NSImage(cgImage: image, size: .zero)
             }
         }
-    }
-}
-
-@MainActor
-private final class ScreenIdentifiers {
-    static let shared = ScreenIdentifiers()
-    private var panels: [NSPanel] = []
-    private var dismissTask: Task<Void, Never>?
-    func show(_ screens: [NSScreen]) {
-        hide()
-        for (index, screen) in screens.enumerated() {
-            let frame = NSRect(x: screen.frame.midX - 80, y: screen.frame.midY - 60, width: 160, height: 120)
-            let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            panel.level = .floating
-            panel.isOpaque = false; panel.backgroundColor = .clear; panel.ignoresMouseEvents = true
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.contentView = NSHostingView(rootView: Text("\(index + 1)").font(.system(size: 64, weight: .bold))
-                .foregroundStyle(.white).frame(width: 160, height: 120)
-                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 24)))
-            panel.orderFrontRegardless(); panels.append(panel)
-        }
-        dismissTask = Task {
-            do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            hide()
-        }
-    }
-    func hide() {
-        dismissTask?.cancel(); dismissTask = nil
-        panels.forEach { $0.orderOut(nil) }; panels = []
     }
 }

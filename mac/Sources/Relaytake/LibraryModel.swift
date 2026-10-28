@@ -337,12 +337,25 @@ final class LibraryModel: ObservableObject {
         return seconds
     }
 
+    /// The picture shown for a take: the moment chosen for it, else just after the start.
     func thumbnail(for entry: TakeEntry) async -> NSImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: entry.files.video))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 640, height: 360)
-        guard let result = try? await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600)) else { return nil }
-        return NSImage(cgImage: result.image, size: .zero)
+        for seconds in [entry.thumbnailTime, 0.5].compactMap({ $0 }) {
+            if let result = try? await generator.image(at: CMTime(seconds: max(0, seconds), preferredTimescale: 600)) {
+                return NSImage(cgImage: result.image, size: .zero)
+            }
+        }
+        return nil
+    }
+
+    /// Makes the picture at `seconds` the one shown for this take in the library.
+    func setThumbnail(for entry: TakeEntry, at seconds: Double) {
+        perform {
+            try TakeLibrary.update(entry) { $0.thumbnailTime = max(0, seconds) }
+            refresh()
+        }
     }
 
     func trash(_ entry: TakeEntry) throws {

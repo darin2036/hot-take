@@ -132,9 +132,9 @@ public enum StudioComposer {
 
         var videoComposition: AVVideoComposition?
         let drawn = burnText ? project.texts + project.captionOverlays() : []
-        // The backdrop and zoom change the picture itself, so the preview shows them too; text is drawn
+        // The backdrop, zoom and marks change the picture itself, so the preview shows them too; text is drawn
         // over the preview by the Studio instead.
-        let styled = project.background != nil || !project.zooms.isEmpty
+        let styled = project.background != nil || !project.zooms.isEmpty || !project.shapes.isEmpty || project.clickHighlight != nil
         if !drawn.isEmpty || styled || camera != nil, let videoTrack = try await composition.loadTracks(withMediaType: .video).first {
             // Text is drawn into each frame by our own compositor. (the system's Core Animation video tool
             // returned blank frames on the test Mac, so it is not used.)
@@ -149,7 +149,9 @@ public enum StudioComposer {
                     transform: videoTrack.preferredTransform,
                     overlays: drawn.compactMap { TextRenderer.render($0, renderSize: renderSize) },
                     effects: styled
-                        ? CanvasEffects(canvas: renderSize, source: renderSize, background: project.background, zooms: project.zooms)
+                        ? CanvasEffects(
+                            canvas: renderSize, source: renderSize, background: project.background, zooms: project.zooms,
+                            shapes: project.shapes, clickHighlight: project.clickHighlight, cuts: project.cuts)
                         : nil,
                     camera: camera.map {
                         CameraEffect(

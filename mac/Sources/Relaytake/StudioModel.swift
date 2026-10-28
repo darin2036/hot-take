@@ -21,6 +21,8 @@ final class StudioModel: ObservableObject {
         case range(TimeSpan)
         case text(UUID)
         case zoom(UUID)
+        /// An arrow, box or blur on the picture.
+        case shape(UUID)
         case clip(UUID)
         /// The recording's own sound as a whole, or (once it has been cut on its own) one part of it.
         case original
@@ -115,6 +117,12 @@ final class StudioModel: ObservableObject {
 
     var hasUnsavedChanges: Bool { project.isEdited }
 
+    /// The project as it was when it was last saved with Save Project, so closing can tell whether anything would be lost.
+    private var savedSnapshot: StudioProject?
+    /// True when there is an edit that is not in a saved project file.
+    var needsProjectSave: Bool { project.isEdited && project != savedSnapshot }
+    func markProjectSaved(_ saved: StudioProject) { savedSnapshot = saved }
+
     // MARK: Draft (autosave)
 
     /// Edits are written to a draft a couple of seconds after the last change, again every so often while the
@@ -180,7 +188,6 @@ final class StudioModel: ObservableObject {
             if let draft = draftStore.load(), let restored = draft.project(duration: duration, cameraSource: source), restored.isEdited {
                 project = restored
                 time = min(max(0, draft.playhead), restored.outputDuration)
-                info = "Picked up your unsaved edits from \(draft.savedAt.formatted(.relative(presentation: .named)))."
             }
             loadCapture()
             ready = true
@@ -270,6 +277,39 @@ final class StudioModel: ObservableObject {
         edit(coalescing: "aim-\(id)") { $0.updateZoom(id) { $0.x = point.x; $0.y = point.y } }
     }
 
+    // MARK: Marks and click rings
+
+    /// Puts an arrow, box or blur on the picture at the playhead, for the person to drag into place.
+    func addShape(_ kind: ShapeOverlay.Kind) {
+        guard ready else { return }
+        var id: UUID?
+        edit { id = $0.addShape(kind, at: self.time) }
+        if let id { select(.shape(id)) }
+    }
+
+    func changeShape(_ id: UUID, coalescing key: String? = nil, _ change: @escaping (inout ShapeOverlay) -> Void) {
+        edit(coalescing: key) { $0.updateShape(id, change) }
+    }
+
+    /// Rings at each recorded click, on or off.
+    func setClickHighlightsOn(_ on: Bool) {
+        guard ready else { return }
+        if on, clicks.isEmpty {
+            info = "No clicks were noted for this recording, so there are none to ring."
+            return
+        }
+        edit { $0.setClickHighlights(on: on, clicks: self.clicks) }
+    }
+
+    func changeClickHighlight(coalescing key: String? = nil, _ change: (inout ClickHighlight) -> Void) {
+        edit(coalescing: key) { project in
+            guard var highlight = project.clickHighlight else { return }
+            change(&highlight)
+            highlight.size = min(ClickHighlight.sizeRange.upperBound, max(ClickHighlight.sizeRange.lowerBound, highlight.size))
+            project.clickHighlight = highlight
+        }
+    }
+
     // MARK: Captions
 
     @Published private(set) var captionStatus: String?
@@ -288,6 +328,21 @@ final class StudioModel: ObservableObject {
                 edit { $0.captions = StudioCaptions(cues: cues) }
                 library.refresh()
             } catch { message = "Could not make captions: \(error.localizedDescription)" }
+        }
+    }
+
+    /// Languages the take's transcript has been translated into (from the Transcript tab), by identifier.
+    var captionTranslations: [String] { TakeLibrary.metadata(for: take.files)?.translations.keys.sorted() ?? [] }
+
+    /// Draws the captions in a translation made on the Transcript tab, or back in the spoken language (nil).
+    func setCaptionLanguage(_ language: String?) {
+        guard let metadata = TakeLibrary.metadata(for: take.files) else { return }
+        let translated = language.flatMap { metadata.translations[$0] }
+        let cues = translated ?? metadata.transcript
+        guard !cues.isEmpty else { return }
+        edit {
+            $0.captions?.cues = cues
+            $0.captions?.language = translated == nil ? nil : language
         }
     }
 
@@ -365,6 +420,7 @@ final class StudioModel: ObservableObject {
         case .text(let id) where project.text(id) == nil: selection = .none
         case .clip(let id) where project.clip(id) == nil: selection = .none
         case .zoom(let id) where project.zoom(id) == nil: selection = .none
+        case .shape(let id) where project.shape(id) == nil: selection = .none
         case .audioPart(let id) where project.originalAudioPart(id) == nil: selection = .none
         case .range(let range) where range.end > project.outputDuration + 0.01: selection = .none
         default: break
@@ -405,17 +461,93 @@ final class StudioModel: ObservableObject {
 
     // MARK: Splices
 
-    /// Breaks the video at the playhead. Nothing is removed; the parts either side can be picked, removed, or
-    /// have their edges dragged.
+    /// Which tracks a splice cuts.
+    enum SpliceTarget: String, CaseIterable {
+        case all, video, audio
+
+        var title: String {
+            switch self {
+            case .all: return "Splice All Tracks"
+            case .video: return "Splice Video Only"
+            case .audio: return "Splice Audio Only"
+            }
+        }
+
+        var help: String {
+            switch self {
+            case .all: return "Break the video and the recording's sound together at the playhead"
+            case .video: return "Break the video and leave the sound unbroken"
+            case .audio: return "Break the recording's sound and leave the video alone"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .all: return "scissors"
+            case .video: return "film"
+            case .audio: return "waveform"
+            }
+        }
+    }
+
+    /// The mode the Splice button uses when no clip is selected. Picking another one from its menu makes it the
+    /// button's own, and it is remembered between launches.
+    @Published var spliceMode: SpliceTarget = SpliceTarget(rawValue: UserDefaults.standard.string(forKey: "spliceMode") ?? "") ?? .all {
+        didSet { UserDefaults.standard.set(spliceMode.rawValue, forKey: "spliceMode") }
+    }
+
+    /// What the Splice button and the S key will cut, given what is selected.
+    var spliceTarget: String {
+        switch selection {
+        case .original, .audioPart: return "Audio"
+        case .text: return "Text"
+        case .zoom: return "Zoom"
+        case .shape: return "Mark"
+        case .clip(let id): return project.clip(id)?.kind == .voiceover ? "Voiceover" : "Music"
+        default: return spliceMode.title.replacingOccurrences(of: "Splice ", with: "")
+        }
+    }
+
+    /// The icon that goes with `spliceTarget`.
+    var spliceSymbol: String {
+        switch selection {
+        case .original, .audioPart: return SpliceTarget.audio.symbol
+        case .text, .zoom, .shape, .clip: return "scissors"
+        default: return spliceMode.symbol
+        }
+    }
+
+    /// Splice with the playhead: cuts what is selected (a text, zoom, music or voiceover clip, or the Audio
+    /// track), and with nothing selected, whatever the button is set to (every track until another is chosen).
     func splice() {
         guard ready else { return }
-        // With a text, zoom or audio clip selected, splice cuts that item in two at the playhead and leaves the
-        // video alone; the same for the Audio track, which then has cuts of its own. Pick nothing to splice the
-        // video (and, with it, the recording's sound).
-        if splitSelectedItem() { return }
+        switch selection {
+        case .original, .audioPart: splice(.audio)
+        case .text, .zoom, .shape, .clip: _ = splitSelectedItem()
+        default: splice(spliceMode)
+        }
+    }
+
+    /// Breaks the chosen tracks at the playhead. Nothing is removed; the parts either side can be picked,
+    /// removed, or have their edges dragged. The video and the recording's sound are cut together unless one
+    /// is chosen on its own.
+    func splice(_ target: SpliceTarget) {
+        guard ready else { return }
         var done = false
-        edit { done = $0.splice(at: self.time) }
-        if done { selection = .none } else { info = "Move the playhead away from the edges (and from other splices) to splice." }
+        edit { project in
+            switch target {
+            case .all: done = project.spliceAllTracks(at: self.time)
+            case .video: done = project.spliceVideoOnly(at: self.time)
+            case .audio: done = project.spliceOriginalAudio(at: self.time)
+            }
+        }
+        if done {
+            selection = target == .audio ? .original : .none
+        } else {
+            info = target == .audio
+                ? "Move the playhead inside a part of the audio, away from its edges and other splices, to splice it."
+                : "Move the playhead away from the edges (and from other splices) to splice."
+        }
     }
 
     /// Splits the selected text, zoom or audio clip at the playhead. Returns true when something was selected
@@ -428,15 +560,10 @@ final class StudioModel: ObservableObject {
             if let later { selection = .text(later) }
         case .zoom(let id): edit { later = $0.splitZoom(id, at: at) }
             if let later { selection = .zoom(later) }
+        case .shape(let id): edit { later = $0.splitShape(id, at: at) }
+            if let later { selection = .shape(later) }
         case .clip(let id): edit { later = $0.splitClip(id, at: at) }
             if let later { selection = .clip(later) }
-        case .original, .audioPart:
-            var done = false
-            edit { done = $0.spliceOriginalAudio(at: at) }
-            if done { selection = .original } else {
-                info = "Move the playhead inside a part of the audio, away from its edges and other splices, to splice it."
-            }
-            return true
         default: return false
         }
         if later == nil { info = "Move the playhead inside the selected item, away from its ends, to split it." }
@@ -517,12 +644,19 @@ final class StudioModel: ObservableObject {
         switch selection {
         case .text(let id): edit { $0.removeText(id) }
         case .zoom(let id): edit { $0.removeZoom(id) }
+        case .shape(let id): edit { $0.removeShape(id) }
         case .clip(let id): edit { $0.removeClip(id) }
         case .audioPart(let id): edit { $0.removeOriginalAudioPart(id) }
         case .range(let range): removeSection(range)
         default: return
         }
         selection = .none
+    }
+
+    /// Joins two parts of the sound that were only spliced.
+    func removeAudioSplice(afterPart index: Int) {
+        edit { $0.removeOriginalAudioSplice(afterPart: index) }
+        selection = .original
     }
 
     /// Makes the recording's sound follow the video's cuts again.
@@ -588,6 +722,7 @@ final class StudioModel: ObservableObject {
         switch new {
         case .text(let id): if let text = project.text(id) { seek(to: text.start + 0.05) }
         case .zoom(let id): if let zoom = project.zoom(id) { seek(to: zoom.start + (zoom.length / 2)) }
+        case .shape(let id): if let shape = project.shape(id), time < shape.start || time > shape.end { seek(to: shape.start + 0.2) }
         case .clip(let id): if let clip = project.clip(id), time < clip.start || time > clip.start + clip.length { seek(to: clip.start) }
         default: break
         }
@@ -793,6 +928,14 @@ final class StudioModel: ObservableObject {
                             try FileManager.default.copyItem(at: original.files.captions, to: copy.captions)
                         }
                     } catch { notes.append("The video was saved, but its notes could not be copied.") }
+                }
+                // Chapters follow their footage through the cuts, so the copy's chapters start where the same parts begin.
+                if snapshot.isEdited {
+                    let carried = ChapterList.remapped(
+                        TakeLibrary.metadata(for: original.files)?.chapters ?? [], through: snapshot.cuts)
+                    if !carried.isEmpty {
+                        try? TakeLibrary.saveChapters(carried, to: copy, created: Date(), duration: snapshot.outputDuration)
+                    }
                 }
                 // Remember which recording this was made from, so the library nests it under its original.
                 try? TakeLibrary.link(copy: copy, to: original.files, created: Date())

@@ -42,16 +42,18 @@ extension LibraryModel {
 
 extension StudioModel {
     /// Saves the take and its current edit as one `.hottake` file the person picks a place for.
-    func shareProject() {
-        guard ready, saveProgress == nil else { return }
+    /// `done` is told whether the project was saved (false when the panel was canceled or the save failed).
+    func shareProject(then done: ((Bool) -> Void)? = nil) {
+        guard ready, saveProgress == nil else { done?(false); return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.hotTake]
         panel.nameFieldStringValue = take.title + "." + HotTakeFile.fileExtension
         panel.message = "Saves the recording and your Studio edit in one file. The person who opens it sees exactly what you see."
         panel.prompt = "Save Project"
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        guard panel.runModal() == .OK, let destination = panel.url else { done?(false); return }
 
         saveDraftNow()
+        let saved = project
         let draft = project.isEdited ? StudioDraft(project: project, playhead: time) : nil
         let files = take.files, title = take.title
         saveProgress = 0
@@ -63,21 +65,31 @@ extension StudioModel {
                     }
                 }.value
                 saveProgress = nil
+                markProjectSaved(saved)
                 info = "Saved \(destination.lastPathComponent). Anyone with Hot Take can open it."
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
+                done?(true)
             } catch {
                 saveProgress = nil
                 message = error.localizedDescription
+                done?(false)
             }
         }
     }
 }
 
 struct SharedProjectCommands: Commands {
+    /// The Studio that is open, if any, so Save Project is only on offer while there is a project to save.
+    @ObservedObject private var library = LibraryModel.shared
+
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Open Hot Take File…") { LibraryModel.shared.chooseAndOpenPackage() }
                 .keyboardShortcut("o", modifiers: .command)
+            // The same action as the Save Project button in the window's toolbar.
+            Button("Save Project…") { library.openStudio?.shareProject() }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(library.openStudio == nil)
         }
     }
 }

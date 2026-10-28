@@ -242,6 +242,35 @@ import Testing
         #expect(parts[2].end == project.outputDuration)
     }
 
+    @Test func splicingAllTracksBreaksVideoAndSoundButVideoOnlyLeavesTheSoundWhole() {
+        var all = StudioProject(duration: 10)
+        all.spliceAllTracks(at: 4)
+        #expect(all.cuts.segments.count == 2)
+        #expect(all.originalAudioParts.count == 2)
+
+        var video = StudioProject(duration: 10)
+        let done = video.spliceVideoOnly(at: 4)
+        #expect(done)
+        #expect(video.cuts.segments.count == 2)
+        #expect(video.originalAudioParts.map(\.source) == [TimeSpan(start: 0, end: 10)])
+        // Later, "all tracks" cuts both because the sound now has cuts of its own.
+        video.spliceAllTracks(at: 7)
+        #expect(video.cuts.segments.count == 3 && video.originalAudioParts.count == 2)
+    }
+
+    @Test func aSplicedAudioPartCanBeJoinedBackButAGapCannot() {
+        var project = StudioProject(duration: 10)
+        project.spliceOriginalAudio(at: 3)
+        project.spliceOriginalAudio(at: 6)
+        let joined = project.removeOriginalAudioSplice(afterPart: 0)
+        #expect(joined)
+        #expect(project.originalAudioParts.map(\.source) == [TimeSpan(start: 0, end: 6), TimeSpan(start: 6, end: 10)])
+        project.removeOriginalAudioPart(project.originalAudioParts[0].id)
+        #expect(project.originalAudioParts.count == 1)
+        let again = project.removeOriginalAudioSplice(afterPart: 0)
+        #expect(!again)
+    }
+
     @Test func separatelyCutSoundSurvivesTheDraft() throws {
         var project = StudioProject(duration: 10)
         project.spliceOriginalAudio(at: 5)

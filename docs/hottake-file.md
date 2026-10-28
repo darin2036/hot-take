@@ -15,7 +15,7 @@ manifest offset, manifest length (UInt64 × 2),
 manifest SHA-256 (32 bytes), "HTKEND!!"                 footer, 56 bytes
 ```
 
-The manifest is at the end so a file is written in one pass. Roles: `video`, `screenOriginal`, `cameraOriginal`, `metadata`, `captions`, `draft` (the edit, the same JSON the Studio autosaves) and `audio`.
+The manifest is at the end so a file is written in one pass. Roles: `video`, `screenOriginal`, `cameraOriginal`, `metadata`, `captions`, `draft` (the edit, the same JSON the Studio keeps as hidden crash recovery) and `audio`.
 
 ## Rules the reader follows
 
