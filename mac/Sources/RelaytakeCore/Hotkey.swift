@@ -90,6 +90,8 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
     case startStop
     case pause
     case screenshot
+    /// Like `startStop`, and the take is also turned into a request for a coding agent when it stops.
+    case startAgent
 
     public var id: String { rawValue }
 
@@ -98,6 +100,7 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
         case .startStop: "Start or stop recording"
         case .pause: "Pause or resume"
         case .screenshot: "Take a screenshot"
+        case .startAgent: "Start or stop a take for an agent"
         }
     }
 
@@ -109,6 +112,7 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
         case .startStop: HotkeyBinding(keyCode: 15, modifiers: [.control, .option, .command])  // R
         case .pause: HotkeyBinding(keyCode: 35, modifiers: [.control, .option, .command])  // P
         case .screenshot: HotkeyBinding(keyCode: 1, modifiers: [.control, .option, .command])  // S
+        case .startAgent: HotkeyBinding(keyCode: 0, modifiers: [.control, .option, .command])  // A
         }
     }
 }

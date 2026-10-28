@@ -78,6 +78,12 @@ struct SourceChooser: View {
                 if mode != "window" { moreMenu }
                 if !previewMessage.isEmpty { Text(previewMessage).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                 Spacer()
+                if mode != "camera" {
+                    Toggle(isOn: $forAgent) { Label("For an agent", systemImage: "sparkles.rectangle.stack") }
+                        .toggleStyle(.checkbox)
+                        .help("When you stop, copy the recording as a request for a coding agent: what you said, with a "
+                            + "picture at each click. Talk through what you want while you show it. Made on this Mac.")
+                }
                 Button("Cancel") { recorder.choosing = false }.keyboardShortcut(.cancelAction)
                 if mode != "camera" {
                     Button("Screenshot", systemImage: "camera.viewfinder") {
@@ -174,12 +180,6 @@ struct SourceChooser: View {
             .disabled(cameras.isEmpty)
             if presenterOn.wrappedValue { presenterDetail.padding(.leading, 40).padding(.bottom, 10) }
             Divider().padding(.leading, 30)
-            if mode != "camera" {
-                sourceRow("For an agent", symbol: "sparkles.rectangle.stack", isOn: $forAgent) { EmptyView() }
-                    .help("When you stop, copy the recording as a request for a coding agent: what you said, with a "
-                        + "picture at each click. Talk through what you want while you show it. Made on this Mac.")
-                Divider().padding(.leading, 30)
-            }
             HStack(spacing: 10) {
                 Image(systemName: "film").frame(width: 20).foregroundStyle(.secondary)
                 Text("File size")

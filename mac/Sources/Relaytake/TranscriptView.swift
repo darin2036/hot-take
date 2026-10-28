@@ -79,6 +79,7 @@ struct TranscriptView: View {
         .task(id: take.id) {
             editingIndex = nil; closeFind(); reload()
             chapters.load(take, library: library, player: player)
+            chapters.findAutomatically { }
         }
         .chapterDialogs(chapters)
         .task { targets = await CaptionTranslator.targets(excluding: SpeechPreferences.locale.language) }
@@ -95,17 +96,17 @@ struct TranscriptView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Transcript").font(.title3.bold())
                 Spacer()
                 if !segments.isEmpty {
                     Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(lines.map(\.text).joined(separator: "\n"), forType: .string)
-                    }.help(showingTranslation ? "Copy the whole translation" : "Copy the whole transcript")
+                    }
+                    .toolbarIcon(showingTranslation ? "Copy the whole translation" : "Copy the whole transcript")
                     translateMenu
                     Button(role: .none) { confirmRemake = true } label: { Label("Remake", systemImage: "arrow.clockwise") }
                         .disabled(status != nil)
-                        .help("Listen to the recording again on this Mac and replace the transcript")
+                        .toolbarIcon("Remake the transcript: listen to the recording again on this Mac and replace it")
                 }
                 if loaded { ChapterActionsMenu(book: chapters) { if segments.isEmpty { reload() } } }
             }
@@ -185,6 +186,7 @@ struct TranscriptView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(breaks.byLine[item.offset] ?? []) { ChapterHeading(chapter: $0, book: chapters, player: player) }
                             row(item.offset, item.element)
+                                .padding(.leading, item.offset >= breaks.firstLine ? 14 : 0)
                         }
                     }
                     ForEach(breaks.after) { ChapterHeading(chapter: $0, book: chapters, player: player) }
@@ -204,7 +206,8 @@ struct TranscriptView: View {
     }
 
     /// Each chapter sits just above the first line that starts at or after it; any later than every line go at the end.
-    private var chapterBreaks: (byLine: [Int: [Chapter]], after: [Chapter]) {
+    /// `firstLine` is where the first chapter's body begins; lines from there on are indented under their headings.
+    private var chapterBreaks: (byLine: [Int: [Chapter]], after: [Chapter], firstLine: Int) {
         var byLine: [Int: [Chapter]] = [:]
         var after: [Chapter] = []
         for chapter in chapters.shown {
@@ -212,7 +215,7 @@ struct TranscriptView: View {
                 byLine[line, default: []].append(chapter)
             } else { after.append(chapter) }
         }
-        return (byLine, after)
+        return (byLine, after, byLine.keys.min() ?? .max)
     }
 
     @ViewBuilder
@@ -265,6 +268,7 @@ struct TranscriptView: View {
             .help("Click to jump to this line. Double-click to edit the words.")
             .contextMenu {
                 Button("Edit", systemImage: "pencil") { beginEditing(index) }.disabled(status != nil || showingTranslation)
+                Button("Start Chapter Here", systemImage: "text.line.first.and.arrowtriangle.forward") { chapters.add(at: segment.start) }
             }
             .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction(named: "Edit this line") { beginEditing(index) }
@@ -302,8 +306,8 @@ struct TranscriptView: View {
                 Button("Save \(CaptionTranslator.name(for: shown)) Captions…") { saveCaptions(language: shown) }
                 Button("Remove \(CaptionTranslator.name(for: shown)) Translation", role: .destructive) { removeTranslation(shown) }
             }
-        } label: { Label("Translate", systemImage: "globe") }
-            .menuIndicator(.hidden).fixedSize()
+        } label: { Label("Translate", systemImage: "translate") }
+            .toolbarIcon("Translate the transcript on this Mac")
             .disabled(status != nil || targets.isEmpty)
             .help("Translate the transcript on this Mac. Translations can be used as captions in the Studio.")
     }
@@ -400,6 +404,7 @@ struct TranscriptView: View {
                 segments = try await Transcripts.ensure(for: take) { status = $0 }
                 if segments.isEmpty { problem = "No speech was found in this recording." }
                 library.refresh()
+                chapters.findAutomatically { }
             } catch { problem = "Could not make the transcript: \(error.localizedDescription)" }
         }
     }

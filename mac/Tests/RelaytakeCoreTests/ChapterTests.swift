@@ -247,6 +247,18 @@ import Testing
         #expect(decoded.count == 1 && decoded[0].start == 5 && decoded[0].title.isEmpty)
     }
 
+    @Test func turningChaptersOffForATakeSurvivesTheSidecarAndKeepsThem() throws {
+        var metadata = TakeMetadata(title: "T", summary: "", created: Date(timeIntervalSince1970: 0))
+        #expect(metadata.chaptersEnabled == nil)  // follows the app-wide default
+        metadata.chapters = [Chapter(start: 0, title: "Intro")]
+        metadata.chaptersEnabled = false
+        let back = try TakeMetadata.decode(try metadata.encoded())
+        #expect(back.chaptersEnabled == false && back.chapters.count == 1)
+
+        let old = #"{"title":"T","summary":"","created":"1970-01-01T00:00:00Z"}"#
+        #expect(try TakeMetadata.decode(Data(old.utf8)).chaptersEnabled == nil)
+    }
+
     @Test func savingChaptersKeepsTheRestOfTheNotes() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("chapters-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -261,6 +273,18 @@ import Testing
         let metadata = try #require(TakeLibrary.metadata(for: files))
         #expect(metadata.chapters == saved)
         #expect(metadata.notes == "N" && metadata.tags == ["a"] && metadata.summary == "S")
+    }
+
+    @Test func aCopyCarriesTheOriginalsChoiceToHideChapters() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("chapters-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = TakeFiles(directory: directory, baseName: "Copy")
+        try TakeLibrary.saveChapters([Chapter(start: 0, title: "A")], to: files, created: Date(), duration: 60, chaptersEnabled: false)
+        #expect(TakeLibrary.metadata(for: files)?.chaptersEnabled == false)
+        // Passing nothing leaves the choice that is there.
+        try TakeLibrary.saveChapters([Chapter(start: 0, title: "A")], to: files, created: Date(), duration: 60)
+        #expect(TakeLibrary.metadata(for: files)?.chaptersEnabled == false)
     }
 
     // MARK: Through cuts

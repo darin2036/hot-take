@@ -113,6 +113,8 @@ final class RecorderModel: ObservableObject {
         switch action {
         case .startStop:
             if isRecording { toggle() } else { quickRecord() }
+        case .startAgent:
+            if isRecording { toggle() } else { quickRecordForAgent() }
         case .pause:
             if isRecording, canPause { paused ? resume() : pause() }
         case .screenshot:
@@ -133,6 +135,17 @@ final class RecorderModel: ObservableObject {
         guard let display = quickDisplay() else { message = "No display was found to record."; return }
         begin(.screen(display))
     }
+
+    /// Quick Record for this take only: when it stops, it is also turned into a request for a coding agent, whatever
+    /// the "For an agent" checkbox says. The checkbox itself is left as it was.
+    func quickRecordForAgent() {
+        guard phase == .idle else { return }
+        guard let display = quickDisplay() else { message = "No display was found to record."; return }
+        begin(.screen(display), forAgent: true)
+    }
+
+    /// Set by a Quick Take for Agent and reset by every new take, so a take that never started cannot leak into the next.
+    private var quickAgent = false
 
     func quickScreenshot() {
         guard phase == .idle, let display = quickDisplay() else { return }
@@ -211,8 +224,9 @@ final class RecorderModel: ObservableObject {
         case camera
     }
 
-    func begin(_ choice: SourceChoice) {
+    func begin(_ choice: SourceChoice, forAgent: Bool = false) {
         guard phase == .idle else { return }
+        quickAgent = forAgent
         choosing = false
         message = ""
         if case .camera = choice { beginCameraOnly(); return }
@@ -575,6 +589,8 @@ final class RecorderModel: ObservableObject {
     private func stop() async {
         if let take = cameraOnly { await finishCameraOnly(take); return }
         guard let current else { return }
+        let forAgent = quickAgent || UserDefaults.standard.bool(forKey: Pref.recordForAgent)
+        quickAgent = false
         // Where the time goes after Stop, in the system log (subsystem org.relaytake.mac, category save). It stays on this Mac.
         let saveLog = Logger(subsystem: "org.relaytake.mac", category: "save")
         var mark = Date()
@@ -643,7 +659,7 @@ final class RecorderModel: ObservableObject {
             LibraryModel.shared.select(files: current.files)
             libraryRequest += 1
             lap("captions and summary")
-            if UserDefaults.standard.bool(forKey: Pref.recordForAgent) {
+            if forAgent {
                 await handOffToAgent(current.files)
                 lap("request for an agent")
             }
@@ -782,6 +798,9 @@ struct MenuContent: View {
             Button("Quick Record" + Self.hint(.startStop), systemImage: "bolt.circle") { model.quickRecord() }
                 .disabled(model.isBusy)
                 .help("Record the screen you used last right away, with your last settings")
+            Button("Quick Take for Agent" + Self.hint(.startAgent), systemImage: "sparkles.rectangle.stack") { model.quickRecordForAgent() }
+                .disabled(model.isBusy)
+                .help("Like Quick Record, and when you stop, copy the recording as a request for a coding agent. Talk through what you want while you show it.")
             Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
                 .disabled(model.isBusy)
         }

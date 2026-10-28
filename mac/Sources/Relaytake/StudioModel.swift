@@ -68,6 +68,13 @@ final class StudioModel: ObservableObject {
     @Published var saveProgress: Double?
     @Published private(set) var saveStatus = ""
 
+    /// The recording's chapters, if it shows any, at their times in the original video.
+    private let sourceChapters: [Chapter]
+
+    /// Where each chapter falls in the edited video: the same positions a saved copy will carry, so a chapter whose
+    /// opening is cut starts where its remaining footage does and one cut away entirely is not here.
+    var chapterMarkers: [Chapter] { ChapterList.remapped(sourceChapters, through: project.cuts) }
+
     private var history = UndoStack<StudioProject>()
     private var gestureBase: StudioProject?
     private var lastCoalesceKey: String?
@@ -90,6 +97,8 @@ final class StudioModel: ObservableObject {
     init(take: TakeEntry, library: LibraryModel) {
         self.take = take
         self.library = library
+        let notes = TakeLibrary.metadata(for: take.files)
+        sourceChapters = (notes?.chaptersEnabled ?? Pref.chaptersByDefault) ? notes?.chapters ?? [] : []
         // A take recorded with a camera has its camera drawn in already; the Studio goes back to the originals so
         // the camera can be moved, resized or hidden.
         let hasOriginals = FileManager.default.fileExists(atPath: take.files.screenOriginal.path)
@@ -113,6 +122,7 @@ final class StudioModel: ObservableObject {
     deinit {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         player.pause()
+        player.replaceCurrentItem(with: nil)
     }
 
     var hasUnsavedChanges: Bool { project.isEdited }
@@ -931,10 +941,12 @@ final class StudioModel: ObservableObject {
                 }
                 // Chapters follow their footage through the cuts, so the copy's chapters start where the same parts begin.
                 if snapshot.isEdited {
-                    let carried = ChapterList.remapped(
-                        TakeLibrary.metadata(for: original.files)?.chapters ?? [], through: snapshot.cuts)
-                    if !carried.isEmpty {
-                        try? TakeLibrary.saveChapters(carried, to: copy, created: Date(), duration: snapshot.outputDuration)
+                    let source = TakeLibrary.metadata(for: original.files)
+                    let carried = ChapterList.remapped(source?.chapters ?? [], through: snapshot.cuts)
+                    if !carried.isEmpty || source?.chaptersEnabled != nil {
+                        try? TakeLibrary.saveChapters(
+                            carried, to: copy, created: Date(), duration: snapshot.outputDuration,
+                            chaptersEnabled: source?.chaptersEnabled)
                     }
                 }
                 // Remember which recording this was made from, so the library nests it under its original.
@@ -1010,5 +1022,15 @@ final class StudioModel: ObservableObject {
         player.pause()
         if voice != .idle { cancelVoiceover() }
         rebuildTask?.cancel()
+        saveTask?.cancel()
+        draftTask?.cancel()
+        // Give the memory back: the edited composition, its decoded frames and the waveforms are only
+        // needed while the Studio is open. The model is not reused after this.
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
+        player.replaceCurrentItem(with: nil)
+        levels = [:]
+        cancellables.removeAll()
+        lifecycle.removeAll()
     }
 }

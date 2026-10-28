@@ -339,9 +339,13 @@ extension TakeLibrary {
 extension TakeLibrary {
     /// Saves chapters into the notes beside a take that has no entry yet (a copy just rendered), keeping anything
     /// already written there.
-    public static func saveChapters(_ chapters: [Chapter], to files: TakeFiles, created: Date, duration: TimeInterval?) throws {
+    /// `chaptersEnabled` carries the original's own choice to show or hide chapters; nil leaves the copy on the default.
+    public static func saveChapters(
+        _ chapters: [Chapter], to files: TakeFiles, created: Date, duration: TimeInterval?, chaptersEnabled: Bool? = nil
+    ) throws {
         var metadata = Self.metadata(for: files) ?? TakeMetadata(title: "", summary: "", created: created)
         metadata.chapters = ChapterList.normalized(chapters, duration: duration ?? metadata.durationSeconds)
+        if let chaptersEnabled { metadata.chaptersEnabled = chaptersEnabled }
         try metadata.encoded().write(to: files.metadata, options: .atomic)
     }
 }

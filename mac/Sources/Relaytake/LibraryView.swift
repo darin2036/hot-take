@@ -15,8 +15,8 @@ struct LibraryView: View {
     @State private var window: NSWindow?
     /// Set while the pinned state is being restored at launch, so that does not resize the window.
     @State private var restoring = true
-    /// The rainbow welcome over the whole window, the first time the app opens (or with `--show-welcome`).
-    @State private var showingWelcome = CommandLine.arguments.contains("--show-welcome") || !UserDefaults.standard.bool(forKey: Pref.welcomed)
+    /// The rainbow welcome over the whole window, once each time the app launches, unless turned off in Settings.
+    @State private var showingWelcome = !WelcomeLaunch.played && (UserDefaults.standard.object(forKey: Pref.showWelcome) as? Bool ?? true)
 
     /// Width the pinned folder list takes (its default column width).
     private static let sidebarWidth: CGFloat = 220
@@ -97,11 +97,9 @@ struct LibraryView: View {
         .toolbarVisibility(showingWelcome ? .hidden : .automatic, for: .windowToolbar)
         .overlay {
             if showingWelcome {
-                WelcomeView {
-                    UserDefaults.standard.set(true, forKey: Pref.welcomed)
-                    showingWelcome = false
-                }
-                .transition(.identity)
+                WelcomeView { showingWelcome = false }
+                    .onAppear { WelcomeLaunch.played = true }
+                    .transition(.identity)
             }
         }
         .background(TrashKeyHandler(
@@ -577,6 +575,7 @@ private struct TakeCard: View {
             image = await library.thumbnail(for: take)
             _ = await library.duration(of: take)
         }
+        .onDisappear { image = nil }
     }
 }
 
@@ -626,6 +625,7 @@ private struct TakeRow: View {
             image = await library.thumbnail(for: take)
             _ = await library.duration(of: take)
         }
+        .onDisappear { image = nil }
     }
 
     private var subtitle: String {
@@ -678,7 +678,8 @@ struct TakeDetailView: View {
                         // The video and summary give way when the info panel slides in beside them.
                         VStack(spacing: 12) {
                             PlayerView(player: player.player, fileURL: take.files.video)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                // Tall enough that the pop-out buttons (top corner) clear the player's own bar (bottom).
+                                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                                 .background(.black).clipped().layoutPriority(-1)
                                 .playbackControls(title: take.title, owner: player, library: library) {
                                     AnyView(PlayerView(player: player.player, fileURL: take.files.video))
@@ -705,10 +706,14 @@ struct TakeDetailView: View {
         .onDisappear {
             PlayerWindows.shared.closeAll(ownedBy: player)
             library.theater = nil
+            player.unload()
         }
         .onChange(of: take.title) { _, new in title = new }
-        .onChange(of: tab) { _, new in
-            if new == .studio { player.player.pause() }  // the Studio plays its own edited copy
+        .onChange(of: tab) { old, new in
+            // The Studio plays its own edited copy, so the original's video is let go while it is open
+            // and loaded again when the user comes back.
+            if new == .studio { player.unload() }
+            else if old == .studio { Task { await player.load(take.files.video) } }
         }
         .confirmationDialog("Move this recording to the Trash?", isPresented: $library.confirmDetailTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {

@@ -2,7 +2,12 @@ import AppKit
 import RelaytakeCore
 import SwiftUI
 
-/// The first time Hot Take opens: a rainbow shimmer over the whole window with the logo in the middle, a plain
+/// Whether the welcome has already played since the app launched, so reopening the library window does not replay it.
+enum WelcomeLaunch {
+    @MainActor static var played = false
+}
+
+/// Each time Hot Take launches: a rainbow shimmer over the whole window with the logo in the middle, a plain
 /// "Welcome" and "What's your Hot Take?", then it fades away into the app. A click or key press skips ahead.
 struct WelcomeView: View {
     let onFinish: () -> Void

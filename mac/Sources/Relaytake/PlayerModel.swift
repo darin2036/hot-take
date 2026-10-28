@@ -46,6 +46,12 @@ final class PlayerModel: ObservableObject {
         duration = (try? await item.asset.load(.duration).seconds) ?? 0
     }
 
+    /// Lets go of the video so its decoded frames and buffers can be freed; `load` brings it back.
+    func unload() {
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+    }
+
     func seek(to seconds: Double) {
         let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)

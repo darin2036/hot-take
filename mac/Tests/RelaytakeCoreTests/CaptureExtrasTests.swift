@@ -37,6 +37,14 @@ import Testing
         #expect(Set(all).count == all.count)
     }
 
+    @Test func theAgentShortcutIsOnByDefaultAndCannotShareKeysWithAnother() {
+        #expect(HotkeyAction.startAgent.standard.display == "⌃⌥⌘A")
+        #expect(HotkeyResolver.resolve(stored: [:]).bindings[.startAgent] == HotkeyAction.startAgent.standard)
+        let result = HotkeyResolver.resolve(stored: [.startAgent: HotkeyAction.screenshot.standard.stored])
+        #expect(result.bindings[.screenshot] != nil && result.bindings[.startAgent] == nil)
+        #expect(result.refused[.startAgent]?.contains("Take a screenshot") == true)
+    }
+
     @Test func missingActionsUseTheirStandardKeysAndEmptyMeansOff() {
         let result = HotkeyResolver.resolve(stored: [.pause: ""])
         #expect(result.bindings[.startStop] == HotkeyAction.startStop.standard)

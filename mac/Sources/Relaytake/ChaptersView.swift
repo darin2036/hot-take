@@ -2,28 +2,29 @@ import AppKit
 import RelaytakeCore
 import SwiftUI
 
-/// The parts of the recording on screen, shown as headings inside its transcript. Hot Take can suggest them from what
-/// is said; the suggestions are only a starting point and nothing is saved until you use them. Once saved, every
-/// chapter can be renamed, moved to the current moment, removed, and more can be added anywhere.
+/// The parts of the recording on screen, shown as headings inside its transcript with the lines under each as its body.
+/// Hot Take can find them from what is said. Every chapter can be renamed, moved to the current moment or removed,
+/// and one can be started at any line.
 @MainActor
 final class ChapterBook: ObservableObject {
     @Published private(set) var saved: [Chapter] = []
-    /// Suggestions waiting for a decision. Shown in place of `saved`, and editable like it, but not written anywhere.
-    @Published var proposal: [Chapter]?
+    /// Whether this recording's transcript shows chapters: its own choice if it has one, otherwise the Settings default.
+    @Published private(set) var enabled = true
     @Published private(set) var status: String?
     @Published private(set) var notes: [String] = []
     @Published var problem = ""
     @Published var confirmReplace = false
     @Published var confirmClear = false
     /// A chapter just added at the playhead: its title opens for typing.
-    @Published private(set) var newID: UUID?
+    private var newID: UUID?
     @Published private(set) var copied = false
 
     private var take: TakeEntry?
     private var library: LibraryModel?
     private var player: PlayerModel?
 
-    var shown: [Chapter] { proposal ?? saved }
+    /// The chapters on screen: none while they are turned off (the saved ones are kept).
+    var shown: [Chapter] { enabled ? saved : [] }
 
     private var duration: TimeInterval? {
         guard let take, let player else { return nil }
@@ -35,28 +36,34 @@ final class ChapterBook: ObservableObject {
         self.take = take
         self.library = library
         self.player = player
-        saved = TakeLibrary.metadata(for: take.files)?.chapters ?? []
-        proposal = nil
+        let metadata = TakeLibrary.metadata(for: take.files)
+        saved = metadata?.chapters ?? []
+        enabled = metadata?.chaptersEnabled ?? Pref.chaptersByDefault
+        pending = nil
         notes = []
         problem = ""
         newID = nil
     }
 
-    /// Applies a change to the suggestions if some are showing, otherwise to the saved chapters (and saves them).
+    /// Applies a change to the chapters and saves them.
     func change(_ edit: (inout [Chapter]) -> Void) {
         guard let take else { return }
         problem = ""
-        if var list = proposal {
-            edit(&list)
-            proposal = ChapterList.normalized(list, duration: duration)
-        } else {
-            var list = saved
-            edit(&list)
-            do {
-                saved = try TakeLibrary.saveChapters(list, for: take, duration: duration)
-                library?.refresh()
-            } catch { problem = "Could not save the chapters: \(error.localizedDescription)" }
-        }
+        var list = saved
+        edit(&list)
+        do {
+            saved = try TakeLibrary.saveChapters(list, for: take, duration: duration)
+            // Taking out the last one means no chapters wanted here, so they are not found again on the next visit.
+            if saved.isEmpty { try TakeLibrary.update(take) { $0.chaptersEnabled = false }; enabled = false }
+            library?.refresh()
+        } catch { problem = "Could not save the chapters: \(error.localizedDescription)" }
+    }
+
+    /// True once for a chapter just added, so its title opens for typing there and not each time it scrolls into view.
+    func takeNew(_ id: UUID) -> Bool {
+        guard newID == id else { return false }
+        newID = nil
+        return true
     }
 
     func rename(_ id: UUID, to title: String) {
@@ -65,12 +72,15 @@ final class ChapterBook: ObservableObject {
 
     func remove(_ id: UUID) { change { $0.removeAll { $0.id == id } } }
 
-    func addAtPlayhead() {
-        guard let player else { return }
-        let chapter = Chapter(start: player.time, title: "New chapter")
+    func addAtPlayhead() { if let player { add(at: player.time) } }
+
+    /// Starts a chapter at a moment, its title open for typing.
+    func add(at time: TimeInterval) {
+        turnOn()
+        let chapter = Chapter(start: time, title: "New chapter")
         newID = chapter.id
         change { $0.append(chapter) }
-        if !shown.contains(where: { $0.id == chapter.id }) { problem = "There is already a chapter at this moment." }
+        if !shown.contains(where: { $0.id == chapter.id }) { problem = "There is already a chapter here." }
     }
 
     func moveToPlayhead(_ id: UUID) {
@@ -81,8 +91,43 @@ final class ChapterBook: ObservableObject {
         if shown.count < before { problem = "There is already a chapter at this moment." }
     }
 
-    /// Finds chapters from what is said. `done` runs afterwards, since a transcript may have been made along the way.
+    /// Turns chapters on or off for this recording. Off hides them and stops them being found; nothing is deleted.
+    func setEnabled(_ on: Bool, found: @escaping @MainActor () -> Void) {
+        guard let take else { return }
+        do {
+            try TakeLibrary.update(take) { $0.chaptersEnabled = on }
+            enabled = on
+            library?.refresh()
+            if on, saved.isEmpty { find(automatic: true, done: found) }
+        } catch { problem = "Could not change chapters: \(error.localizedDescription)" }
+    }
+
+    /// Asking for chapters (finding or adding one) turns them back on for this recording.
+    private func turnOn() {
+        guard !enabled, let take else { return }
+        try? TakeLibrary.update(take) { $0.chaptersEnabled = true }
+        enabled = true
+    }
+
+    /// Finds chapters by itself for a recording that has a transcript, none yet and chapters on. Quiet when there is nothing to find.
+    func findAutomatically(done: @escaping @MainActor () -> Void) {
+        guard enabled, saved.isEmpty, status == nil, let take,
+              !(TakeLibrary.metadata(for: take.files)?.transcript ?? []).isEmpty else { return }
+        find(automatic: true, done: done)
+    }
+
+    /// Chapters found from what is said, waiting only for the go-ahead to replace ones already there.
+    private var pending: [Chapter]?
+
+    /// Finds chapters from what is said. Done at once when there are none yet; otherwise asks before replacing yours.
+    /// `done` runs afterwards, since a transcript may have been made along the way.
     func suggest(done: @escaping @MainActor () -> Void) {
+        guard status == nil else { return }
+        turnOn()
+        find(automatic: false, done: done)
+    }
+
+    private func find(automatic: Bool, done: @escaping @MainActor () -> Void) {
         guard status == nil, let target = take else { return }
         problem = ""
         notes = []
@@ -92,27 +137,54 @@ final class ChapterBook: ObservableObject {
             let result = await ChapterAnalysis.run(for: target) { self.status = $0 }
             library?.refresh()
             guard target.id == take?.id else { return }
-            notes = result.notes
-            if !result.chapters.isEmpty { proposal = result.chapters }
+            // Looking by itself says nothing when there is nothing to find; asked, it says why.
+            if !automatic { notes = result.notes }
+            if !result.chapters.isEmpty {
+                pending = result.chapters
+                if saved.isEmpty { useFound() } else { confirmReplace = true }
+            }
             done()
         }
     }
 
-    func useProposal() {
-        guard let proposal, let take else { return }
+    var foundCount: Int { pending?.count ?? 0 }
+
+    func useFound() {
+        guard let pending, let take else { return }
         do {
-            saved = try TakeLibrary.saveChapters(proposal, for: take, duration: duration)
-            self.proposal = nil
-            notes = []
+            saved = try TakeLibrary.saveChapters(pending, for: take, duration: duration)
+            self.pending = nil
             library?.refresh()
         } catch { problem = "Could not save the chapters: \(error.localizedDescription)" }
     }
+
+    func discardFound() { pending = nil }
 
     func copyTimestamps() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(ChapterList.timestampList(shown), forType: .string)
         copied = true
         Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+    }
+}
+
+/// The icon alone in a box of one size, so a button and a menu come out the same however the system pads each.
+private struct ToolbarGlyphStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.icon.frame(width: 20, height: 16)    }
+}
+
+extension View {
+    /// An icon-only button or menu in the transcript's header: all the same size, named by a tooltip (which waits a moment
+    /// before it shows) and by its accessibility label.
+    func toolbarIcon(_ tip: String) -> some View {
+        labelStyle(ToolbarGlyphStyle())
+            .buttonStyle(.bordered)
+            .menuIndicator(.hidden)
+            .controlSize(.regular)
+            .fixedSize()
+            .help(tip)
+            .accessibilityLabel(tip)
     }
 }
 
@@ -123,21 +195,22 @@ struct ChapterActionsMenu: View {
 
     var body: some View {
         Menu {
-            Button("Suggest Chapters", systemImage: "sparkles") { book.suggest(done: suggested) }
+            Toggle("Chapters", isOn: Binding(get: { book.enabled }, set: { book.setEnabled($0, found: suggested) }))
                 .disabled(book.status != nil)
-                .help("Find where the subject changes, on this Mac. You choose what to keep, and can change any of it afterwards.")
+                .help("Show chapters in this transcript. Turning them off keeps any you have saved. New recordings follow the setting in Settings.")
+            Divider()
+            Button("Find Chapters", systemImage: "sparkles") { book.suggest(done: suggested) }
+                .disabled(book.status != nil)
+                .help("Find where the subject changes, on this Mac. Every chapter can be renamed, moved or removed afterwards.")
             Button("Add Chapter Here", systemImage: "plus") { book.addAtPlayhead() }
                 .disabled(book.status != nil)
-                .help("Start a chapter at the current moment of the video")
+                .help("Start a chapter at the current moment of the video. You can also right-click a line.")
             Divider()
             Button("Copy Chapter Timestamps", systemImage: "doc.on.doc") { book.copyTimestamps() }.disabled(book.shown.isEmpty)
             Button("Remove All Chapters…", systemImage: "trash", role: .destructive) { book.confirmClear = true }
-                .disabled(book.saved.isEmpty || book.proposal != nil)
+                .disabled(book.saved.isEmpty)
         } label: { Label("Chapters", systemImage: "list.bullet.rectangle") }
-            .labelStyle(.iconOnly)
-            .menuIndicator(.hidden).fixedSize()
-            .help("Chapters: headings in the transcript that split the recording into parts")
-            .accessibilityLabel("Chapters")
+            .toolbarIcon("Chapters: headings that split the transcript into parts")
     }
 }
 
@@ -146,32 +219,12 @@ struct ChapterStatus: View {
     @ObservedObject var book: ChapterBook
 
     var body: some View {
-        if book.proposal != nil { proposalBar }
         if let status = book.status {
             HStack(spacing: 8) { ProgressView().controlSize(.small); Text(status).font(.caption).foregroundStyle(.secondary) }
         }
         if book.copied { Label("Chapter timestamps copied", systemImage: "checkmark").font(.caption).foregroundStyle(.green) }
         if !book.problem.isEmpty { Text(book.problem).font(.caption).foregroundStyle(.red) }
         ForEach(book.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
-    }
-
-    private var proposalBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Suggested chapters. Not saved yet.", systemImage: "sparkles").font(.callout.weight(.medium))
-            Text("They are shown in the transcript. Rename, move or remove any of them first if you like.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button(book.saved.isEmpty ? "Use These Chapters" : "Replace My Chapters…") {
-                    if book.saved.isEmpty { book.useProposal() } else { book.confirmReplace = true }
-                }
-                .buttonStyle(.borderedProminent)
-                Button("Discard") { book.proposal = nil }
-            }
-            .controlSize(.small)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -186,9 +239,10 @@ private struct ChapterDialogs: ViewModifier {
     func body(content: Content) -> some View {
         content
             .confirmationDialog("Replace your chapters?", isPresented: $book.confirmReplace) {
-                Button("Replace", role: .destructive) { book.useProposal() }
+                Button("Replace", role: .destructive) { book.useFound() }
+                Button("Keep Mine", role: .cancel) { book.discardFound() }
             } message: {
-                Text("The \(book.saved.count) chapters you have now, including any changes you made, are replaced by the \(book.proposal?.count ?? 0) suggested ones.")
+                Text("The \(book.saved.count) chapters you have now, including any changes you made, are replaced by the \(book.foundCount) found.")
             }
             .confirmationDialog("Remove all chapters?", isPresented: $book.confirmClear) {
                 Button("Remove All", role: .destructive) { book.change { $0 = [] } }
@@ -207,25 +261,40 @@ struct ChapterHeading: View {
     let player: PlayerModel
 
     @State private var title = ""
+    /// The title is words until it is double-clicked (or Rename is chosen); Return or clicking away then saves it and
+    /// puts it back. A chapter just added starts open for its name.
+    @State private var editing = false
     @FocusState private var focused: Bool
-
-    private var suggested: Bool { book.proposal != nil }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(ChapterList.timestamp(chapter.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            TextField("Chapter title", text: $title)
-                .textFieldStyle(.plain)
-                .font(.headline)
-                .focused($focused)
-                .onSubmit(commit)
-                .onChange(of: focused) { _, now in if !now { commit() } }
-                .accessibilityLabel("Chapter title, starts at \(ChapterList.timestamp(chapter.start))")
-            if suggested {
-                Image(systemName: "sparkles").font(.caption).foregroundStyle(.tint).help("Suggested, not saved yet")
+            if editing {
+                TextField("Chapter title", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.title3.weight(.semibold))
+                    .focused($focused)
+                    .onSubmit { finish(save: true) }
+                    .onExitCommand { finish(save: false) }
+                    .onChange(of: focused) { _, now in if !now { finish(save: true) } }
+                    .task { focused = true }
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 1.5))
+                    .accessibilityLabel("Chapter title, starts at \(ChapterList.timestamp(chapter.start))")
+            } else {
+                Text(chapter.title.isEmpty ? "Untitled chapter" : chapter.title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(chapter.title.isEmpty ? .secondary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { begin() })
+                    .accessibilityLabel("Chapter, \(chapter.title), starts at \(ChapterList.timestamp(chapter.start))")
+                    .accessibilityAction(named: "Rename") { begin() }
             }
             Menu {
                 Button("Play from Here", systemImage: "play") { player.play(from: chapter.start) }
+                Button("Rename", systemImage: "pencil") { begin() }
                 Button("Move to Current Time", systemImage: "arrow.right.to.line") { book.moveToPlayhead(chapter.id) }
                 Divider()
                 Button("Delete Chapter", systemImage: "trash", role: .destructive) { book.remove(chapter.id) }
@@ -233,22 +302,27 @@ struct ChapterHeading: View {
                 .menuIndicator(.hidden).fixedSize().buttonStyle(.borderless)
                 .accessibilityLabel("Chapter actions")
         }
-        .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 4)
+        .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 4)
         .overlay(alignment: .top) { Divider().padding(.horizontal, 8) }
-        .background(suggested ? Color.accentColor.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { player.seek(to: chapter.start) }
-        .help("Click the time to jump here. Click the title to rename it.")
-        .onAppear {
-            title = chapter.title
-            if book.newID == chapter.id { focused = true }
-        }
-        .onChange(of: chapter.title) { _, new in if !focused { title = new } }
+        .help("Click to jump here. Double-click the title to rename it.")
+        .onAppear { if book.takeNew(chapter.id) { begin() } }
     }
 
-    private func commit() {
+    private func begin() {
+        title = chapter.title
+        editing = true
+        focused = true
+    }
+
+    /// Ends the edit. The new title is kept unless it was cancelled, emptied or left as it was.
+    private func finish(save: Bool) {
+        guard editing else { return }
+        editing = false
+        focused = false
         let cleaned = title.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        if cleaned.isEmpty || cleaned == chapter.title { title = chapter.title } else { book.rename(chapter.id, to: cleaned) }
+        if save, !cleaned.isEmpty, cleaned != chapter.title { book.rename(chapter.id, to: cleaned) }
     }
 }
 

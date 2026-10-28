@@ -92,13 +92,16 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
     /// The parts of the recording: suggested from the transcript, then kept, renamed, moved or removed by the person.
     /// Times are seconds into this take's video, so a copy with parts cut out does not carry them. Empty when none.
     public var chapters: [Chapter]
+    /// Whether this recording's transcript shows chapters. Nil follows the app-wide default; set when the person turns
+    /// them on or off for this recording (or removes every chapter). Turning them off keeps the saved chapters.
+    public var chaptersEnabled: Bool?
 
     public init(
         title: String, summary: String, created: Date, durationSeconds: Double? = nil,
         transcript: [CaptionSegment] = [], tags: [String] = [], notes: String = "",
         clicks: [ClickEvent] = [], captureKind: String? = nil, derivedFrom: String? = nil, cameraOffset: Double? = nil,
         cameraPlacement: CameraPlacement? = nil, thumbnailTime: Double? = nil,
-        translations: [String: [CaptionSegment]] = [:], chapters: [Chapter] = []
+        translations: [String: [CaptionSegment]] = [:], chapters: [Chapter] = [], chaptersEnabled: Bool? = nil
     ) {
         self.title = title
         self.summary = summary
@@ -115,6 +118,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         self.thumbnailTime = thumbnailTime
         self.translations = translations
         self.chapters = chapters
+        self.chaptersEnabled = chaptersEnabled
     }
 
     /// Older sidecars have no tags or notes; they decode with empty values.
@@ -135,6 +139,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         thumbnailTime = try c.decodeIfPresent(Double.self, forKey: .thumbnailTime)
         translations = try c.decodeIfPresent([String: [CaptionSegment]].self, forKey: .translations) ?? [:]
         chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? []
+        chaptersEnabled = try c.decodeIfPresent(Bool.self, forKey: .chaptersEnabled)
     }
 
     /// Keeps what was seen while recording (clicks, what was captured) on a take whose metadata is being
