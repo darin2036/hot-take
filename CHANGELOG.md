@@ -1,22 +1,44 @@
 # Changelog
 
-## 0.1.0 (pre-release)
+Every pull request adds its changes here. Dates are when the work was merged or committed. See [docs/compatibility.md](docs/compatibility.md) for what has and has not been verified.
 
-First public source release. See [docs/compatibility.md](docs/compatibility.md) for what has and has not been verified.
+## Unreleased
 
-- **Mac app:** screen, window and area recording to MP4 with microphone, size and audio choices; on-device captions, titles, summaries and suggested edits; a library with folders, emoji folder icons and versions nested under their original; Watch, Transcript and Info views; a Studio with splice and trim, text, captions, music, voiceover, a styled window background and auto zoom on clicks; compression and MP4, MOV and WebM export.
-- **browser extension and web app:** local screen recording with optional microphone and webcam, IndexedDB storage with recovery, a library, and a basic editor.
-- Local only: no accounts, telemetry, hosted media or remote code. Cloud upload and sharing are not implemented.
-- **Mac app:** Save Project in the Studio writes a `.hottake` file (recording, edit and audio in one file) that a teammate opens from File ▸ Open Hot Take File… or by double-click; see [docs/hottake-file.md](docs/hottake-file.md).
-- **Mac app:** Splice with the Audio track selected cuts the recording's sound on its own (remove a part to leave silence, Follow Video to undo); with nothing selected it still cuts video and sound together, and the Audio row now shows the break.
-- **Mac app:** the record sheet and Settings ▸ Recording show the system's Mic Mode under the microphone, with an **Open Mic Settings** button (and **Open Camera Settings** beside the presenter preview) that opens the system menu, with a nudge toward Voice Isolation. While either is showing, Hot Take holds the microphone open without recording so the system menu is available, and shows the mode macOS is really applying. The app can read the mode but only the person can change it.
+### Pull request #5: shortcuts, marks, agent takes, chapters, translation
+
 - **Mac app:** shortcuts that work in any app (start/stop, pause, screenshot, and a take for an agent; ⌃⌥⌘R, P, S and A by default, changeable in Settings), Quick Record (the screen used last, no sheet), screenshots of a screen, window or area saved as PNG into the library folder, camera-only takes (camera and microphone, no screen), a floating speaker-notes window that is never in a recording, and an option to leave Notification Center out of captures.
 - **Mac app:** the Studio's **Mark** tool draws arrows, boxes and blurred regions on the picture, with handles to drag, and rings each click noted while recording; marks follow the picture through a zoom or backdrop and ripple with cuts.
 - **Mac app:** **Record for an agent.** A **For an agent** checkbox beside Start recording in the record sheet (or **Quick Take for Agent** in the menu bar, which starts a Quick Record and does it for that one take, or **For Agent** on any take's Watch page) turns a take into a request a coding agent can act on: what you said, laid out beside a picture of the screen at each click with a ring where you clicked, a full transcript, and, with on-device intelligence, a goal and steps read from your narration. It is saved as `PROMPT.md` and PNGs in a hidden folder beside the take (moved and trashed with it) and copied with full picture paths, ready to paste into Claude Code, Codex or Cursor. Made on this Mac; nothing is uploaded. Unlike Loom, visited links and app names are not recorded.
 - **Mac app:** join recordings into a new take (clicks carry over), import MP4/MOV/M4V videos (File ▸ Import Video, or drop them on the library), playback speed 0.5×–2×, choose a take's thumbnail, save a GIF of a stretch, and save a picture at each click.
-
 - **Mac app:** each time it launches, a rainbow shimmer fills the window with the logo, "Welcome" and "What's your Hot Take?", then fades into the library. A click or key press skips it, Reduce Motion holds the colors still, and it plays once per launch, not each time the window is reopened, and can be turned off in Settings ▸ Library.
-
 - **Mac app:** the Transcript tab has a **Translate** menu that translates the transcript into another language on this Mac with the system's Translation framework (the first use of a language may ask the system to download it). Pick which version to read, **Save … Captions…** writes a `.vtt` in that language, **Remove** deletes a translation, and the Studio's Captions popover can draw captions in a translated language. Translations are kept in the take's `.json` and are dropped when the transcript is corrected or remade. Captions in Chinese and Japanese now wrap at a line length instead of running on as one line.
-
 - **Mac app:** chapters appear as headings inside the Transcript tab's transcript, managed from its **Chapters** menu. chapters are on by default (Settings > Processing > **Find chapters in transcripts**), and a recording with a transcript and no chapters gets them when its transcript is opened. The Chapters menu's **Chapters** switch turns them off or on for that recording; off hides them and keeps any saved. the Studio's ruler shows them as markers at their positions in the edited video (click to go there, hover for the name; edit them in the transcript), and a saved copy keeps the hide/show choice. **Find Chapters** finds where the subject changes (from the transcript's wording, pauses and phrases like "next, let's look at") and the on-device model names each part; each chapter is a heading with its lines beneath it, saved straight away (it asks before replacing chapters you already have). Every chapter can be renamed, moved to the current time or deleted, and you can start one at any line (right-click it), and **Copy Timestamps** gives a `0:00 Title` list for a video description. Chapters are kept in the take's `.json` (and so travel in a `.hottake` file), the Watch page has a **Chapters** menu to jump between them, and `--chapters video.mp4` prints suggestions without saving. A copy saved from the Studio keeps the chapters, moved to where the same parts now begin; a chapter whose footage was all cut is dropped.
+- **Mac app:** Settings ▸ Recording has a microphone menu and the same Mic Mode row as the record sheet, with an **Open Mic Settings** button (the camera's is now **Open Camera Settings**). macOS only opens its Mic Modes menu for an app that has the microphone open, so while the record sheet or that pane is showing, Hot Take holds the chosen mic open without recording and steps aside during the countdown, recording and saving.
+- **Mac app:** each build is numbered by its commit count, because the system caches icons by bundle ID and version and a fixed version kept showing an old icon in Control Center. Signing requirements, and so permissions, do not include the version.
+
+## October 27, 2026 (pull requests #1 to #4)
+
+### Studio and transcript
+
+- **Mac app:** the Studio autosaves your edit to a hidden draft beside the take (shortly after each change, periodically, and when the app is switched away from, quit or the Studio closed) and restores it when you reopen the take. **Save Copy** and **Discard Edits** remove it, and it moves or goes to the Trash with the take. (#1)
+- **Mac app:** **Share** in the Studio sends the current edited version, not the original file. (#1)
+- **Mac app:** the separate Edit tab is gone; trimming and splicing happen in the Studio. (#1)
+- **Mac app, fix:** a recording whose picture ends before its audio no longer fails Save Copy, Share or Export with “No frame to draw on”; the last frame is held. (#1)
+- **Mac app:** Edit ▸ Find in Transcript (⌘F, ⌘G, ⇧⌘G) replaces the always-visible search field and tints matching lines. A line can be corrected from its context menu and saved with a check mark.
+- **Mac app:** Save Project in the Studio writes a `.hottake` file (recording, edit and audio in one file) that a teammate opens from File ▸ Open Hot Take File… or by double-click; see [docs/hottake-file.md](docs/hottake-file.md).
+- **Mac app:** Splice with the Audio track selected cuts the recording's sound on its own (remove a part to leave silence, Follow Video to undo); with nothing selected it still cuts video and sound together, and the Audio row now shows the break.
+- **Mac app:** the record sheet and Settings ▸ Recording show the system's Mic Mode under the microphone, with an **Open Mic Settings** button (and **Open Camera Settings** beside the presenter preview) that opens the system menu, with a nudge toward Voice Isolation. While either is showing, Hot Take holds the microphone open without recording so the system menu is available, and shows the mode macOS is really applying. The app can read the mode but only the person can change it.
+- **Mac app, fix:** the camera now starts before the screen, so the camera bubble is in the video from the first frame; the Studio trims the camera's early footage. If the screen fails to start, the camera is stopped and its file removed. (#3)
+
+### Build and signing
+
+- `mac/scripts/bundle.sh` clears stale Screen Recording, Microphone and Camera grants when the signing identity changes, and uses the Apple Development certificate when there is one (`RELAYTAKE_SIGN_IDENTITY` overrides it). (#2)
+- `mac/scripts/bundle.sh` builds with an ad-hoc signature again when there is no certificate, with a warning that the Screen Recording grant will not survive rebuilds; an earlier change had made that a hard failure. (#4)
+
+## 0.1.0 (pre-release), October 22, 2026
+
+First public source release.
+
+- **Mac app:** screen, window and area recording to MP4 with microphone, size and audio choices; on-device captions, titles, summaries and suggested edits; a library with folders, emoji folder icons and versions nested under their original; Watch, Transcript and Info views; a Studio with splice and trim, text, captions, music, voiceover, a styled window background and auto zoom on clicks; compression and MP4, MOV and WebM export.
+- **browser extension and web app:** local screen recording with optional microphone and webcam, IndexedDB storage with recovery, a library, and a basic editor.
+- Local only: no accounts, telemetry, hosted media or remote code. Cloud upload and sharing are not implemented.

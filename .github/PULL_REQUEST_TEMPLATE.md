@@ -11,5 +11,6 @@
 ## Housekeeping
 
 - [ ] No real recordings, credentials or private names in the change
+- [ ] `CHANGELOG.md` has an entry for this change
 - [ ] Docs and `docs/compatibility.md` updated honestly
 - [ ] Third-party material added to `THIRD_PARTY_NOTICES.md` (if any)
