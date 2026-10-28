@@ -72,6 +72,10 @@ final class StudioModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var lifecycle = Set<AnyCancellable>()
+    private var draftTask: Task<Void, Never>?
+    private var lastDraftWrite = Date.distantPast
+    private var draftDiscarded = false
 
     private var recorder: MicrophoneRecorder?
     private var meterTimer: Timer?
@@ -109,6 +113,55 @@ final class StudioModel: ObservableObject {
 
     var hasUnsavedChanges: Bool { project.isEdited }
 
+    // MARK: Draft (autosave)
+
+    /// Edits are written to a draft a couple of seconds after the last change, again every so often while the
+    /// user keeps working, and when the app goes inactive or quits, so closing or crashing never loses them.
+    private static let draftDelay: Duration = .seconds(2)
+    private static let draftInterval: TimeInterval = 20
+
+    private var draftStore: StudioDraftStore { StudioDraftStore(files: take.files) }
+
+    private func scheduleDraftSave() {
+        guard ready else { return }
+        draftTask?.cancel()
+        // A stream of drags never lets the quiet delay pass, so also save once an interval has gone by.
+        let overdue = Date().timeIntervalSince(lastDraftWrite) > Self.draftInterval
+        draftTask = Task { [weak self] in
+            if !overdue { try? await Task.sleep(for: Self.draftDelay) }
+            guard !Task.isCancelled else { return }
+            self?.saveDraftNow()
+        }
+    }
+
+    /// Writes the draft now (or removes it when there is nothing left to keep). Safe to call at any time.
+    func saveDraftNow() {
+        guard ready, saveProgress == nil else { return }
+        draftTask?.cancel()
+        lastDraftWrite = Date()
+        if project.isEdited {
+            if let data = draftStore.encode(StudioDraft(project: project, playhead: time)) { draftStore.write(data) }
+        } else {
+            draftStore.discard()
+        }
+    }
+
+    /// Throws the draft away, for Discard Edits and after a copy has been saved.
+    func discardDraft() {
+        draftTask?.cancel()
+        draftDiscarded = true
+        draftStore.discard()
+    }
+
+    private func observeLifecycle() {
+        guard lifecycle.isEmpty else { return }
+        for name in [NSApplication.willResignActiveNotification, NSApplication.willTerminateNotification, NSWindow.willCloseNotification] {
+            NotificationCenter.default.publisher(for: name).sink { [weak self] _ in
+                MainActor.assumeIsolated { if self?.draftDiscarded == false { self?.saveDraftNow() } }
+            }.store(in: &lifecycle)
+        }
+    }
+
     // MARK: Loading
 
     func load() async {
@@ -120,11 +173,19 @@ final class StudioModel: ObservableObject {
                 let rect = CGRect(origin: .zero, size: natural).applying(try await track.load(.preferredTransform))
                 videoSize = CGSize(width: max(1, abs(rect.width)), height: max(1, abs(rect.height)))
             }
-            project = StudioProject(duration: duration, cameraSource: cameraSource())
+            let source = cameraSource()
+            project = StudioProject(duration: duration, cameraSource: source)
+            if let draft = draftStore.load(), let restored = draft.project(duration: duration, cameraSource: source), restored.isEdited {
+                project = restored
+                time = min(max(0, draft.playhead), restored.outputDuration)
+                info = "Picked up your unsaved edits from \(draft.savedAt.formatted(.relative(presentation: .named)))."
+            }
             loadCapture()
             ready = true
             loadLevels(for: take.files.video)
             await rebuildPreview()
+            if time > 0 { seek(to: time) }
+            observeLifecycle()
         } catch {
             message = "This recording could not be opened for editing: \(error.localizedDescription)"
         }
@@ -266,6 +327,7 @@ final class StudioModel: ObservableObject {
             lastCoalesceKey = nil
             syncUndoFlags()
             schedulePreview()
+            scheduleDraftSave()
         }
         gestureBase = nil
     }
@@ -288,6 +350,7 @@ final class StudioModel: ObservableObject {
         pruneSelection()
         time = min(time, next.outputDuration)
         if rebuilding { schedulePreview() }
+        scheduleDraftSave()
     }
 
     private func syncUndoFlags() {
@@ -343,9 +406,30 @@ final class StudioModel: ObservableObject {
     /// have their edges dragged.
     func splice() {
         guard ready else { return }
+        // With a text, zoom or audio clip selected, splice cuts that item in two at the playhead and leaves the
+        // video alone. Pick nothing to splice the video.
+        if splitSelectedItem() { return }
         var done = false
         edit { done = $0.splice(at: self.time) }
         if done { selection = .none } else { info = "Move the playhead away from the edges (and from other splices) to splice." }
+    }
+
+    /// Splits the selected text, zoom or audio clip at the playhead. Returns true when something was selected
+    /// that can be split (even if the playhead was in the wrong place, which is explained), false otherwise.
+    private func splitSelectedItem() -> Bool {
+        let at = time
+        var later: UUID?
+        switch selection {
+        case .text(let id): edit { later = $0.splitText(id, at: at) }
+            if let later { selection = .text(later) }
+        case .zoom(let id): edit { later = $0.splitZoom(id, at: at) }
+            if let later { selection = .zoom(later) }
+        case .clip(let id): edit { later = $0.splitClip(id, at: at) }
+            if let later { selection = .clip(later) }
+        default: return false
+        }
+        if later == nil { info = "Move the playhead inside the selected item, away from its ends, to split it." }
+        return true
     }
 
     /// `[`: drop the video before the playhead (within the part it is in).
@@ -694,6 +778,7 @@ final class StudioModel: ObservableObject {
                 }
                 // Remember which recording this was made from, so the library nests it under its original.
                 try? TakeLibrary.link(copy: copy, to: original.files, created: Date())
+                discardDraft()
                 library.expandVersions(of: original)
                 library.select(files: copy)
                 if !notes.isEmpty { message = notes.joined(separator: " ") }
@@ -739,10 +824,28 @@ final class StudioModel: ObservableObject {
         }
     }
 
+    /// Renders the Studio's current version to a temporary MP4 for sharing, at the recording's own quality with
+    /// its sound. Nothing is added to the library. The file lives in the temporary folder until the system clears it.
+    func renderForSharing() async throws -> URL {
+        guard ready, saveProgress == nil, voice == .idle else { throw StudioRenderError.failed("Wait for the Studio to finish what it is doing, then share again.") }
+        player.pause()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("HotTakeShare-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent(take.files.baseName + ".mp4")
+        saveProgress = 0
+        saveStatus = "Preparing to share…"
+        defer { saveProgress = nil }
+        try await StudioSaver.render(asset: asset, project: project, to: file, format: .mp4, options: StudioSaveOptions()) {
+            self.saveProgress = $0
+        }
+        return file
+    }
+
     func cancelSave() { saveTask?.cancel() }
 
     /// Called when the Studio goes away: stop playing and drop an unfinished recording.
     func shutdown() {
+        if !draftDiscarded { saveDraftNow() }
         player.pause()
         if voice != .idle { cancelVoiceover() }
         rebuildTask?.cancel()

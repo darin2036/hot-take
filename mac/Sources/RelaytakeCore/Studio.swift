@@ -6,7 +6,7 @@ import Foundation
 // does in a video editor and they stay attached to the picture. All rules here are pure and tested.
 
 /// A color for text or the box behind it. Components are 0...1.
-public struct TextColor: Equatable, Hashable, Sendable {
+public struct TextColor: Codable, Equatable, Hashable, Sendable {
     public var red: Double
     public var green: Double
     public var blue: Double
@@ -30,7 +30,7 @@ public struct TextColor: Equatable, Hashable, Sendable {
     ]
 }
 
-public struct TextOverlay: Identifiable, Equatable, Sendable {
+public struct TextOverlay: Codable, Identifiable, Equatable, Sendable {
     /// Quick sizes. The size itself is continuous (`heightFraction`), so any size in between works too.
     public enum Size: String, CaseIterable, Sendable {
         case small, medium, large, huge
@@ -78,6 +78,16 @@ public struct TextOverlay: Identifiable, Equatable, Sendable {
 
     public var length: Double { end - start }
 
+    /// The same text with a new identity, for splitting one into two.
+    func copy(withID id: UUID) -> TextOverlay {
+        var copy = TextOverlay(id: id, text: text, start: start, end: end, x: x, y: y, size: .medium,
+            fontFamily: fontFamily, isBold: isBold, isItalic: isItalic, color: color,
+            showsBackground: showsBackground, boxColor: boxColor)
+        copy.heightFraction = heightFraction
+        copy.fades = fades
+        return copy
+    }
+
     /// The quick size this is exactly, if any.
     public var sizePreset: Size? { Size.allCases.first { abs($0.heightFraction - heightFraction) < 0.0005 } }
 
@@ -103,8 +113,8 @@ public struct TextOverlay: Identifiable, Equatable, Sendable {
 }
 
 /// One stretch of extra audio. Music usually fits the video; a voiceover is a recorded take.
-public struct AudioClip: Identifiable, Equatable, Sendable {
-    public enum Kind: String, Sendable {
+public struct AudioClip: Codable, Identifiable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
         case music, voiceover
     }
 
@@ -431,6 +441,20 @@ public struct StudioProject: Equatable, Sendable {
 
     public mutating func removeText(_ id: UUID) { texts.removeAll { $0.id == id } }
 
+    /// Splits a text in two at `time`, both halves identical apart from timing. Returns the later half, or nil
+    /// when `time` is not inside the text or would leave a half shorter than a text can be.
+    @discardableResult
+    public mutating func splitText(_ id: UUID, at time: Double) -> UUID? {
+        guard let index = texts.firstIndex(where: { $0.id == id }) else { return nil }
+        let text = texts[index]
+        guard time - text.start >= Self.minimumLength, text.end - time >= Self.minimumLength else { return nil }
+        var later = text.copy(withID: UUID())
+        later.start = time
+        texts[index].end = time
+        texts.insert(later, at: index + 1)
+        return later.id
+    }
+
     /// Moves a text clip to `start`, keeping its length, within the video.
     public mutating func moveText(_ id: UUID, to start: Double) {
         let total = outputDuration  // read before mutating: the closure must not touch self
@@ -487,6 +511,35 @@ public struct StudioProject: Equatable, Sendable {
     }
 
     public mutating func removeClip(_ id: UUID) { clips.removeAll { $0.id == id } }
+
+    /// Splits an audio clip in two at `time`. The later half carries on from the same place in the file, so
+    /// the sound is unbroken until one half is moved or removed. A fitted clip keeps fitting the video in the
+    /// later half; the fade in stays with the first half and the fade out with the second. Returns the later
+    /// half, or nil when `time` is not inside the clip or would leave a half too short.
+    @discardableResult
+    public mutating func splitClip(_ id: UUID, at time: Double) -> UUID? {
+        guard let index = clips.firstIndex(where: { $0.id == id }) else { return nil }
+        let clip = clips[index]
+        let end = clip.start + clip.effectiveLength(outputDuration: outputDuration)
+        guard time - clip.start >= Self.minimumLength, end - time >= Self.minimumLength else { return nil }
+        // Where in the file the later half begins, allowing for a looped file that has wrapped around.
+        let offset = time - clip.start
+        let firstRun = max(0.001, clip.sourceDuration - clip.sourceStart)
+        var source = clip.sourceStart + offset
+        if clip.loops, offset >= firstRun {
+            source = (offset - firstRun).truncatingRemainder(dividingBy: max(0.001, clip.sourceDuration))
+        }
+        guard source < clip.sourceDuration - 0.1 else { return nil }
+        let later = AudioClip(
+            id: UUID(), kind: clip.kind, url: clip.url, name: clip.name, sourceDuration: clip.sourceDuration,
+            sourceStart: source, start: time, length: clip.fitsVideo ? outputDuration - time : end - time,
+            volume: clip.volume, fadeIn: 0, fadeOut: clip.fadeOut, fitsVideo: clip.fitsVideo, loops: clip.loops)
+        clips[index].length = offset
+        clips[index].fitsVideo = false
+        clips[index].fadeOut = 0
+        clips.insert(later, at: index + 1)
+        return later.id
+    }
 
     public func clip(_ id: UUID) -> AudioClip? { clips.first { $0.id == id } }
     public func text(_ id: UUID) -> TextOverlay? { texts.first { $0.id == id } }

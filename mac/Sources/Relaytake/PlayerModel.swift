@@ -7,7 +7,6 @@ final class PlayerModel: ObservableObject {
     let player = AVPlayer()
     @Published var time: Double = 0
     @Published var duration: Double = 0
-    @Published var isPreviewingEdit = false
 
     private var observer: Any?
     private var url: URL?
@@ -27,7 +26,6 @@ final class PlayerModel: ObservableObject {
 
     func load(_ url: URL) async {
         self.url = url
-        isPreviewingEdit = false
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
         time = 0
@@ -37,6 +35,7 @@ final class PlayerModel: ObservableObject {
     func seek(to seconds: Double) {
         let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+        time = target.seconds  // so a paused player still shows where it is
     }
 
     func play(from seconds: Double) {
@@ -46,18 +45,5 @@ final class PlayerModel: ObservableObject {
 
     func togglePlay() {
         if player.timeControlStatus == .paused { player.play() } else { player.pause() }
-    }
-
-    func previewEdit(_ segments: [TimeSpan]) async throws {
-        guard let url else { return }
-        let composition = try await Exporter.composition(for: AVURLAsset(url: url), segments: segments)
-        player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
-        isPreviewingEdit = true
-        player.play()
-    }
-
-    func stopPreview() async {
-        guard let url else { return }
-        await load(url)
     }
 }

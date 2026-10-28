@@ -44,6 +44,7 @@ struct SourceChooser: View {
     @State private var microphones = Microphone.available()
     @State private var refresh = UUID()
     @State private var previewMessage = ""
+    @State private var windowGridHeight: CGFloat = 270
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -295,11 +296,15 @@ struct SourceChooser: View {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
                     ForEach(windows) { windowCard($0) }
-                }.padding(3)
+                }
+                .padding(3)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { windowGridHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .fixedSize(horizontal: false, vertical: true)  // only as tall as the windows need
-            .frame(maxHeight: 270)
+            // Only as tall as the windows need, up to a cap. (fixedSize on the ScrollView let the grid spill
+            // past the cap and over the controls above and below it.)
+            .frame(height: min(270, max(90, windowGridHeight)))
+            .clipped()
         }
         HStack(spacing: 10) {
             Text("A browser is recorded as the window shows it, so switch to the tab you want first. the system doesn't let apps record one background tab.")

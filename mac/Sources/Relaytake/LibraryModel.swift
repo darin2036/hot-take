@@ -34,12 +34,10 @@ final class LibraryModel: ObservableObject {
     @Published var confirmBulkTrash = false
     /// Asks before moving the open recording to the Trash.
     @Published var confirmDetailTrash = false
+    /// The Studio that is open, so the toolbar's Share sends its edited version rather than the original file.
+    @Published var openStudio: StudioModel?
     /// While set, the video fills the whole window ("theater mode").
     @Published var theater: TheaterRequest?
-    /// Cuts the suggestions panel wants applied; the editor consumes them into its own cut list.
-    @Published var cutRequests: [TimeSpan] = []
-    /// Set by the toolbar's Edit button; the detail view consumes it to switch to its Edit tab.
-    @Published var pendingTab: String?
 
     /// file-manager-style selection of recordings in the browser (distinct from `selection`, the open take).
     @Published private(set) var selectionState = SelectionState()
@@ -241,15 +239,6 @@ final class LibraryModel: ObservableObject {
         let ids = payloads.flatMap { $0.split(separator: "\n").map(String.init) }
         move(ids: ids, to: folder)
         clearSelection()
-    }
-
-    /// Toolbar Edit: open the one selected recording on its Edit tab (or switch the open one to it).
-    func editSelected() {
-        if selection == nil {
-            guard selectionState.count == 1, let id = selectionState.selected.first else { return }
-            selection = id
-        }
-        pendingTab = "edit"
     }
 
     /// Open the single selected recording (Return key or double-click).

@@ -125,11 +125,6 @@ struct LibraryView: View {
             // Actions for whatever is selected (or open): they appear only when there is something to act on.
             ToolbarItemGroup(placement: .primaryAction) {
                 if library.selected == nil && !targets.isEmpty {
-                    Button { library.editSelected() } label: { Label("Edit", systemImage: "scissors") }
-                        .labelStyle(.titleAndIcon)
-                        .disabled(targets.count != 1)
-                        .help(targets.count == 1 ? "Trim, cut or compress this recording" : "Select one recording to edit")
-
                     Button { askToTrash() } label: { Label("Trash", systemImage: "trash") }
                         .labelStyle(.titleAndIcon)
                         .help(targets.count == 1 ? "Move to Trash" : "Move \(targets.count) recordings to the Trash")
@@ -149,11 +144,15 @@ struct LibraryView: View {
             ToolbarItem(placement: .primaryAction) { RecordButton(recorder: recorder) }
                 .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
-                ShareLink(items: targets.map(\.files.video)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                if let studio = library.openStudio, detailTab == .studio, targets.count == 1 {
+                    StudioShareButton(model: studio)
+                } else {
+                    ShareLink(items: targets.map(\.files.video)) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(targets.isEmpty)
+                    .help(targets.isEmpty ? "Select a recording to share" : "Share selected recordings")
                 }
-                .disabled(targets.isEmpty)
-                .help(targets.isEmpty ? "Select a recording to share" : "Share selected recordings")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Settings", systemImage: "gearshape") { openSettings() }
@@ -680,15 +679,8 @@ struct TakeDetailView: View {
             library.theater = nil
         }
         .onChange(of: take.title) { _, new in title = new }
-        .onChange(of: library.pendingTab, initial: true) { _, new in
-            if new == "edit" {
-                tab = .studio
-                library.pendingTab = nil
-            }
-        }
         .onChange(of: tab) { _, new in
             if new == .studio { player.player.pause() }  // the Studio plays its own edited copy
-            if new == .watch, player.isPreviewingEdit { Task { await player.stopPreview() } }
         }
         .confirmationDialog("Move this recording to the Trash?", isPresented: $library.confirmDetailTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {

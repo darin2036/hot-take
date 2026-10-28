@@ -163,7 +163,7 @@ public enum TakeLibrary {
 
     /// Moves the take's files to the Trash. Never deletes permanently.
     public static func trash(_ entry: TakeEntry, fileManager: FileManager = .default) throws {
-        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal]
+        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft]
         where fileManager.fileExists(atPath: url.path) {
             try fileManager.trashItem(at: url, resultingItemURL: nil)
         }
@@ -229,6 +229,7 @@ public enum TakeLibrary {
             (entry.files.video, moved.video), (entry.files.captions, moved.captions),
             (entry.files.metadata, moved.metadata),
             (entry.files.screenOriginal, moved.screenOriginal), (entry.files.cameraOriginal, moved.cameraOriginal),
+            (entry.files.draft, moved.draft),
         ]
         for (from, to) in pairs where fileManager.fileExists(atPath: from.path) {
             if from.deletingLastPathComponent() != to.deletingLastPathComponent() {

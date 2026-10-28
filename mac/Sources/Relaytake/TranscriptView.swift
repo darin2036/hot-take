@@ -2,7 +2,7 @@ import AppKit
 import RelaytakeCore
 import SwiftUI
 
-/// The words of a recording next to its video. Click a line to play from there; the line being spoken
+/// The words of a recording next to its video. Click a line to jump there; the line being spoken
 /// is highlighted and followed as the video plays.
 struct TranscriptView: View {
     let take: TakeEntry
@@ -17,6 +17,7 @@ struct TranscriptView: View {
     @State private var matchPosition = 0
     @State private var scrollTick = 0
     @FocusState private var findFocused: Bool
+    @FocusState private var editFocused: Bool
     @State private var status: String?
     @State private var problem = ""
     /// The line being corrected, and what it says so far. Double-click a line to start; Return or clicking away saves.
@@ -156,9 +157,19 @@ struct TranscriptView: View {
                         if editingIndex == item.offset {
                             HStack(alignment: .top, spacing: 10) {
                                 Text(timeLabel(item.element.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).padding(.top, 5)
-                                // Return or the check mark saves, Escape puts the old words back, and clicking anywhere else saves.
+                                // Return or the check mark saves, Escape puts the old words back, and clicking away saves.
                                 VStack(alignment: .trailing, spacing: 4) {
-                                    LineEditor(text: $draft) { cancelled in finishEditing(cancelled: cancelled) }
+                                    TextField("", text: $draft, axis: .vertical)
+                                        .textFieldStyle(.plain)
+                                        .lineLimit(1...8)
+                                        .focused($editFocused)
+                                        .padding(6)
+                                        .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 1.5))
+                                        .onSubmit { finishEditing(cancelled: false) }
+                                        .onExitCommand { finishEditing(cancelled: true) }
+                                        .onChange(of: editFocused) { _, focused in if !focused { finishEditing(cancelled: false) } }
+                                        .task { editFocused = true }
                                         .accessibilityLabel("Transcript line at \(timeLabel(item.element.start))")
                                     Button { finishEditing(cancelled: false) } label: {
                                         Image(systemName: "checkmark.circle.fill").font(.title2)
@@ -168,7 +179,7 @@ struct TranscriptView: View {
                                     .accessibilityLabel("Save correction")
                                 }
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 3).id(item.offset)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
                         } else {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(timeLabel(item.element.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -182,18 +193,15 @@ struct TranscriptView: View {
                                     : active ? Color.accentColor.opacity(0.18) : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
                             .contentShape(Rectangle())
-                            // One click plays from the line; the second click of a double-click opens it for correcting.
-                            .onTapGesture {
-                                if NSApp.currentEvent?.clickCount == 2 { beginEditing(item.offset) } else { player.play(from: item.element.start) }
-                            }
-                            .help("Click to play from here. Double-click to correct the words.")
+                            // A double-click opens the line for editing. A click moves to the line without starting or stopping playback.
+                            .onTapGesture { player.seek(to: item.element.start) }
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditing(item.offset) })
+                            .help("Click to jump to this line. Double-click to edit the words.")
                             .contextMenu {
-                                Button("Correct Words", systemImage: "pencil") { beginEditing(item.offset) }.disabled(status != nil)
-                                Button("Play From Here", systemImage: "play") { player.play(from: item.element.start) }
+                                Button("Edit", systemImage: "pencil") { beginEditing(item.offset) }.disabled(status != nil)
                             }
-                            .id(item.offset)
                             .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-                            .accessibilityAction(named: "Correct this line") { beginEditing(item.offset) }
+                            .accessibilityAction(named: "Edit this line") { beginEditing(item.offset) }
                         }
                     }
                 }
@@ -282,120 +290,6 @@ struct TranscriptFindCommands: Commands {
             Button("Find in Transcript…") { find?.show() }.keyboardShortcut("f").disabled(find == nil)
             Button("Find Next") { find?.next() }.keyboardShortcut("g").disabled(find == nil)
             Button("Find Previous") { find?.previous() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(find == nil)
-        }
-    }
-}
-
-/// A text field for correcting one transcript line. It takes the keyboard as soon as it appears. Return finishes,
-/// Escape cancels, and a click anywhere outside it finishes too: a click on plain text or empty space does not move
-/// keyboard focus by itself in a SwiftUI window, so the click is watched for directly.
-private struct LineEditor: NSViewRepresentable {
-    @Binding var text: String
-    /// Called once, when editing ends. `cancelled` is true for Escape.
-    let onDone: (Bool) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(wrappingLabelWithString: text)
-        field.isEditable = true
-        field.isSelectable = true
-        field.isBezeled = false
-        field.drawsBackground = true
-        field.backgroundColor = .textBackgroundColor
-        field.focusRingType = .none
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 5
-        field.layer?.borderWidth = 1.5
-        field.layer?.borderColor = NSColor.controlAccentColor.cgColor
-        field.font = .preferredFont(forTextStyle: .body)
-        field.lineBreakMode = .byWordWrapping
-        field.usesSingleLineMode = false
-        field.cell?.wraps = true
-        field.cell?.isScrollable = false
-        field.delegate = context.coordinator
-        context.coordinator.field = field
-        context.coordinator.takeKeyboard()
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        context.coordinator.parent = self
-    }
-
-    /// Wraps to the width it is given and grows as the line gets longer.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView field: NSTextField, context: Context) -> CGSize? {
-        let width = proposal.width ?? 320
-        let size = field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: max(24, (size?.height ?? 24) + 6))
-    }
-
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: LineEditor
-        weak var field: NSTextField?
-        private var monitor: Any?
-        private var cancelled = false
-        private var finished = false
-
-        init(_ parent: LineEditor) { self.parent = parent }
-        deinit { stopWatching() }
-
-        /// Takes the keyboard once the field is in its window, trying again for a moment if the window is not ready.
-        func takeKeyboard(attempt: Int = 0) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let field = self.field, !self.finished else { return }
-                guard let window = field.window else {
-                    if attempt < 20 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.takeKeyboard(attempt: attempt + 1) } }
-                    return
-                }
-                window.makeFirstResponder(field)
-                (field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: (field.stringValue as NSString).length, length: 0))
-                self.watchClicks()
-            }
-        }
-
-        func watchClicks() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-                guard let self, let field = self.field, let window = field.window, event.window === window else { return event }
-                let point = field.convert(event.locationInWindow, from: nil)
-                if !field.bounds.contains(point) { window.makeFirstResponder(nil) }  // ends editing, which saves
-                return event
-            }
-        }
-
-        private func stopWatching() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            if let field { parent.text = field.stringValue }
-            field?.invalidateIntrinsicContentSize()
-        }
-
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            switch selector {
-            case #selector(NSResponder.insertNewline(_:)):
-                control.window?.makeFirstResponder(nil)
-                return true
-            case #selector(NSResponder.cancelOperation(_:)):
-                cancelled = true
-                control.window?.makeFirstResponder(nil)
-                return true
-            default:
-                return false
-            }
-        }
-
-        func controlTextDidEndEditing(_ notification: Notification) {
-            guard !finished else { return }
-            finished = true
-            stopWatching()
-            if !cancelled, let field { parent.text = field.stringValue }
-            let wasCancelled = cancelled
-            let done = parent.onDone
-            DispatchQueue.main.async { done(wasCancelled) }
         }
     }
 }

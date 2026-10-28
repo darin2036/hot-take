@@ -21,7 +21,7 @@ public struct ClickEvent: Codable, Equatable, Sendable {
 
 /// A backdrop behind the recorded window: a gradient or a solid color, with the window inset, rounded
 /// and (optionally) shadowed. The output keeps the recording's size, so the window shrinks to make room.
-public struct WindowBackground: Equatable, Sendable {
+public struct WindowBackground: Codable, Equatable, Sendable {
     public var top: TextColor
     public var bottom: TextColor
     /// Margin on each side, as a fraction of the picture's shorter side.
@@ -95,7 +95,7 @@ public enum CanvasLayout {
 
 /// A moment where the picture zooms in on one spot and then eases back out. Times are on the edited
 /// timeline; the focus is a point in the recorded picture (0...1 from the top-left).
-public struct ZoomSegment: Identifiable, Equatable, Sendable {
+public struct ZoomSegment: Codable, Identifiable, Equatable, Sendable {
     public static let scaleRange = 1.2...4.0
     public static let minimumLength = 0.8
 
@@ -233,6 +233,20 @@ public extension StudioProject {
     }
 
     mutating func removeZoom(_ id: UUID) { zooms.removeAll { $0.id == id } }
+
+    /// Splits a zoom in two at `time` (the edited timeline). Each half keeps the same focus and scale and
+    /// eases on its own, so one can be moved, re-aimed or removed. Returns the later half, or nil when
+    /// `time` is not inside the zoom or would leave a half shorter than a zoom can be.
+    @discardableResult
+    mutating func splitZoom(_ id: UUID, at time: Double) -> UUID? {
+        guard let index = zooms.firstIndex(where: { $0.id == id }) else { return nil }
+        let zoom = zooms[index]
+        guard time - zoom.start >= ZoomSegment.minimumLength, zoom.end - time >= ZoomSegment.minimumLength else { return nil }
+        let later = ZoomSegment(start: time, end: zoom.end, x: zoom.x, y: zoom.y, scale: zoom.scale)
+        zooms[index].end = time
+        zooms.insert(later, at: index + 1)
+        return later.id
+    }
 
     /// Replaces every zoom with ones made from the recording's clicks.
     mutating func generateZooms(from clicks: [ClickEvent], scale: Double = 1.8) {

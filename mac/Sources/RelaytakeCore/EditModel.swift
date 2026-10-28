@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TimeSpan: Equatable, Sendable {
+public struct TimeSpan: Codable, Equatable, Sendable {
     public var start: TimeInterval
     public var end: TimeInterval
     public var length: TimeInterval { end - start }
@@ -23,12 +23,11 @@ public enum EditError: LocalizedError, Equatable {
     }
 }
 
-/// Non-destructive cut list in source-video time, mirroring the browser extension's editor.
-/// `segments` are the parts that will be kept, in order. Undo and reset never touch the file.
+/// Non-destructive cut list in source-video time. `segments` are the parts that will be kept, in order;
+/// the Studio's own undo stack restores earlier lists, and nothing here touches the file.
 public struct EditModel: Equatable, Sendable {
     public let duration: TimeInterval
     public private(set) var segments: [TimeSpan]
-    private var history: [[TimeSpan]] = []
 
     public static let minimumSegment: TimeInterval = 0.05
     public static let minimumResult: TimeInterval = 0.1
@@ -38,24 +37,23 @@ public struct EditModel: Equatable, Sendable {
         self.segments = [TimeSpan(start: 0, end: max(0, duration))]
     }
 
+    /// Rebuilds a cut list that was saved earlier. Parts are clamped to the recording and anything unusable is
+    /// dropped; with nothing usable left, the whole recording is kept.
+    public init(duration: TimeInterval, segments saved: [TimeSpan]) {
+        self.init(duration: duration)
+        let usable = saved.compactMap { span -> TimeSpan? in
+            guard span.start.isFinite, span.end.isFinite else { return nil }
+            let clamped = TimeSpan(start: max(0, span.start), end: min(self.duration, span.end))
+            return clamped.length >= Self.minimumSegment ? clamped : nil
+        }
+        if usable.reduce(0, { $0 + $1.length }) >= Self.minimumResult { segments = usable }
+    }
+
     public var keptDuration: TimeInterval { segments.reduce(0) { $0 + $1.length } }
     public var isEdited: Bool { segments != [TimeSpan(start: 0, end: duration)] }
-    public var canUndo: Bool { !history.isEmpty }
-
-    /// Keep only the selected range (still respecting earlier cuts).
-    public mutating func trim(to range: TimeSpan) throws { try apply(range, keep: true) }
 
     /// Remove the selected range and join what is left.
-    public mutating func remove(_ range: TimeSpan) throws { try apply(range, keep: false) }
-
-    public mutating func undo() {
-        if let previous = history.popLast() { segments = previous }
-    }
-
-    public mutating func reset() {
-        if isEdited { history.append(segments) }
-        segments = [TimeSpan(start: 0, end: duration)]
-    }
+    public mutating func remove(_ range: TimeSpan) throws { try apply(range) }
 
     /// Source time → time in the edited output, or nil when the moment was cut out.
     public func outputTime(forSource time: TimeInterval) -> TimeInterval? {
@@ -67,21 +65,17 @@ public struct EditModel: Equatable, Sendable {
         return nil
     }
 
-    private mutating func apply(_ range: TimeSpan, keep: Bool) throws {
+    private mutating func apply(_ range: TimeSpan) throws {
         guard range.start.isFinite, range.end.isFinite, range.start >= 0, range.end > range.start else {
             throw EditError.invalidRange
         }
         let next = segments.flatMap { segment -> [TimeSpan] in
-            if keep {
-                return [TimeSpan(start: max(segment.start, range.start), end: min(segment.end, range.end))]
-            }
             return [
                 TimeSpan(start: segment.start, end: min(segment.end, range.start)),
                 TimeSpan(start: max(segment.start, range.end), end: segment.end),
             ]
         }.filter { $0.length >= Self.minimumSegment }
         guard next.reduce(0, { $0 + $1.length }) >= Self.minimumResult else { throw EditError.nothingLeft }
-        history.append(segments)
         segments = next
     }
 }

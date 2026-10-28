@@ -293,6 +293,8 @@ final class StudioCompositor: NSObject, AVVideoCompositing {
         kCVPixelBufferMetalCompatibilityKey as String: true,
     ]
     private let queue = DispatchQueue(label: "relaytake.studio.compositor")
+    /// The last picture drawn on, kept to hold when the video runs out. Only touched on `queue`.
+    private var lastFrame: CVPixelBuffer?
 
     var sourcePixelBufferAttributes: [String: any Sendable]? { attributes }
     var requiredPixelBufferAttributesForRenderContext: [String: any Sendable] { attributes }
@@ -302,13 +304,22 @@ final class StudioCompositor: NSObject, AVVideoCompositing {
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         queue.async {
             guard let instruction = request.videoCompositionInstruction as? StudioInstruction,
-                  let frame = request.sourceFrame(byTrackID: instruction.trackID),
                   let output = request.renderContext.newPixelBuffer()
             else {
                 request.finish(with: NSError(domain: "Hot Take", code: 1, userInfo: [NSLocalizedDescriptionKey: "No frame to draw on."]))
                 return
             }
-            var image = CIImage(cvPixelBuffer: frame)
+            // A screen recording's picture can end before its sound does. Past the last frame the picture holds
+            // still instead of failing the whole render; with no frame at all it is plain black.
+            var image: CIImage
+            if let frame = request.sourceFrame(byTrackID: instruction.trackID) {
+                self.lastFrame = frame
+                image = CIImage(cvPixelBuffer: frame)
+            } else if let held = self.lastFrame {
+                image = CIImage(cvPixelBuffer: held)
+            } else {
+                image = CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: request.renderContext.size))
+            }
             if !instruction.transform.isIdentity {
                 image = image.transformed(by: instruction.transform)
                 image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))

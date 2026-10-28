@@ -23,6 +23,9 @@ public struct TakeFiles: Equatable, Sendable {
             .appendingPathComponent("\(baseName).piece-\(number).\(ext)")
     }
 
+    /// Where the Studio keeps the draft of an unfinished edit, out of sight beside the take.
+    public var draftsDirectory: URL { directory.appendingPathComponent(".hot-take-drafts", isDirectory: true) }
+    public var draft: URL { draftsDirectory.appendingPathComponent(baseName + ".studio.json") }
     public var originalsDirectory: URL { directory.appendingPathComponent(".hot-take-originals", isDirectory: true) }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
