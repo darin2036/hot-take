@@ -28,13 +28,20 @@ struct Microphone: Identifiable, Hashable {
 enum MicrophoneModeStatus: Equatable {
     case standard, voiceIsolation, wideSpectrum
 
-    static func current() -> MicrophoneModeStatus {
-        switch AVCaptureDevice.preferredMicrophoneMode {
-        case .voiceIsolation: .voiceIsolation
-        case .wideSpectrum: .wideSpectrum
-        default: .standard
+    init(_ mode: AVCaptureDevice.MicrophoneMode) {
+        switch mode {
+        case .voiceIsolation: self = .voiceIsolation
+        case .wideSpectrum: self = .wideSpectrum
+        default: self = .standard
         }
     }
+
+    /// The mode chosen in Control Center for this app.
+    static func current() -> MicrophoneModeStatus { MicrophoneModeStatus(AVCaptureDevice.preferredMicrophoneMode) }
+
+    /// The mode macOS is really applying. It only means something while this app has a microphone open, and it can
+    /// differ from the chosen one (some microphones cannot do Voice Isolation).
+    static func active() -> MicrophoneModeStatus { MicrophoneModeStatus(AVCaptureDevice.activeMicrophoneMode) }
 
     var title: String {
         switch self {

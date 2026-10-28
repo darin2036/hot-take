@@ -222,3 +222,14 @@ Verified: the app builds and the sheet draws with the new row (rendered with `--
 
 Not verified: that the button opens the menu while nothing is recording, that Voice Isolation applies to microphone sound captured through ScreenCaptureKit (the recording path) and to voiceovers (a separate capture session), that the row updates after the mode is changed, and behavior with external and Bluetooth microphones. Until those are checked, a recording made with Voice Isolation on is not known to be noise-filtered.
 
+## Mic Mode in Settings and a live microphone while choosing — October 28, 2026
+
+Settings ▸ Recording now has a microphone menu and the same Mic Mode row as the record sheet, with an **Open Mic Settings** button (the camera's button is now **Open Camera Settings**). While the record sheet or the Recording pane is showing and the microphone is on and allowed, Hot Take keeps that microphone open without recording or saving anything, so macOS has an app using the microphone when its Mic Modes menu opens. The row shows the mode macOS is applying (`activeMicrophoneMode`) and says so when it differs from the one chosen. The monitor closes when the window closes and steps aside during any countdown, recording or save. Settings never triggers the microphone question; the record sheet may.
+
+Open Mic Settings first makes sure the microphone is open and running, then asks macOS for the menu, because a probe on the test Mac showed the menu appears from a mic-only capture session but not with no session open (and not from a voice-processing `AVAudioEngine`). What it logs: subsystem `org.relaytake.mac`, category `microphone`, one line per click. An early report that the button did nothing with Presenter off came from a stale app: `swift build` does not update `build/Hot Take.app`, only `scripts/bundle.sh` does.
+
+The Mic Modes menu showed the old clapperboard icon for Hot Take. The system's icon cache is keyed by bundle ID and version, and an old Relaytake.app had the same ones, so `bundle.sh` now sets `CFBundleVersion` to the commit count. On the test Mac the stale icon also needed the old app deleted, `/Library/Caches/com.apple.iconservices.store` cleared and a restart; after that the flame showed.
+
+Not changed: recording still captures the microphone through ScreenCaptureKit for screen takes, and through a capture session only for camera-only takes. Switching screen takes to a capture-session microphone is not done, because it is not known that ScreenCaptureKit's microphone ignores Mic Modes.
+
+Verified: the app builds in release, and on the test Mac a person saw Open Mic Settings open the Mic Modes menu with Presenter off, offering Standard and Voice Isolation. Not verified: that the row follows a change, what `activeMicrophoneMode` reports during a ScreenCaptureKit recording, behavior with external and Bluetooth microphones, and the tests (this Mac has no Xcode, so `swift test` cannot run here).

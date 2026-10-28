@@ -888,7 +888,7 @@ struct PlayerView: NSViewRepresentable {
 
 
 /// Hands back the window a view is in, so the library can resize it.
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
     let onChange: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView {

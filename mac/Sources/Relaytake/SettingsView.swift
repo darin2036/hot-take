@@ -62,6 +62,8 @@ private struct RecordingPane: View {
     @AppStorage(Pref.quality) private var quality = "medium"
     @AppStorage(Pref.microphone) private var microphone = true
     @AppStorage(Pref.systemAudio) private var systemAudio = true
+    @AppStorage(Pref.microphoneDevice) private var microphoneID = ""
+    @State private var microphones = Microphone.available()
 
     var body: some View {
         Form {
@@ -74,12 +76,23 @@ private struct RecordingPane: View {
             Section {
                 Toggle("Record microphone", isOn: $microphone)
                     .help("Record your voice from the microphone.")
+                if microphone {
+                    Picker("Microphone", selection: Binding(
+                        get: { microphones.contains { $0.id == microphoneID } ? microphoneID : "" },
+                        set: { microphoneID = $0 })) {
+                        ForEach(microphones) { Text($0.name).tag($0.id) }
+                    }
+                    .help("Which microphone to record. \"Default\" follows the Mac's current input.")
+                    MicrophoneModeRow(owner: "settings", deviceID: microphoneID)
+                }
                 Toggle("Record system audio", isOn: $systemAudio)
                     .help("Record the sound your Mac plays. Your voice uses the microphone setting.")
             } header: {
                 Text("Audio")
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
+        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in microphones = Microphone.available() }
         .settingsPane()
     }
 }

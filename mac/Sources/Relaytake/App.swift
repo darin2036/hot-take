@@ -23,6 +23,9 @@ final class RecorderModel: ObservableObject {
     /// Bumped to ask the always-alive menu-bar label to open the library window.
     @Published var libraryRequest = 0
 
+    /// The one recorder the app runs, for library tools that report through its status banner.
+    private(set) static weak var current: RecorderModel?
+
     // Edited in SettingsView; read here when a recording starts or finishes.
     private func flag(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
@@ -74,7 +77,10 @@ final class RecorderModel: ObservableObject {
     /// Used by the `--record-check` test mode to keep its take out of the library.
     var directoryOverride: URL?
 
-    init() { watchForUnexpectedStop() }
+    init() {
+        Self.current = self
+        watchForUnexpectedStop()
+    }
 
     var isRecording: Bool { if case .recording = phase { true } else { false } }
     var isBusy: Bool { if case .idle = phase { false } else if isRecording { false } else { true } }

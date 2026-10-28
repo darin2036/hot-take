@@ -44,6 +44,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSSpeechRecognitionUsageDescription</key><string>Hot Take transcribes recordings on this Mac to make captions.</string>
 </dict></plist>
 PLIST
+# The system caches an app's icon by bundle ID and version, so a build whose version never changes can keep showing an
+# old icon (in Control Center's Mic Modes list, for one). Number each build by its commit count so the version moves.
+# Permissions are unaffected: they follow the signing requirement, which does not include the version.
+plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD 2>/dev/null || echo 1)" "$APP/Contents/Info.plist"
 IDENTITY="${RELAYTAKE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
 if [ -n "$IDENTITY" ]; then
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac "$APP"

@@ -28,7 +28,6 @@ struct SourceChooser: View {
     @AppStorage(Pref.cameraDevice) private var cameraID = ""
     @State private var cameras = CameraChoice.available()
     @State private var effects = CameraEffectsStatus.current()
-    @State private var micMode = MicrophoneModeStatus.current()
     @ObservedObject var recorder: RecorderModel
     @State private var mode: String
 
@@ -111,7 +110,6 @@ struct SourceChooser: View {
             // The system's effects can be switched on its own panel while this sheet is open.
             while !Task.isCancelled {
                 if !chosenCamera.isEmpty { effects = CameraEffectsStatus.current() }
-                if microphoneOn { micMode = MicrophoneModeStatus.current() }
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -146,7 +144,7 @@ struct SourceChooser: View {
                     set: { microphoneID = $0 }), choices: microphones.map { ($0.id, $0.name) })
                     .help("Which microphone to record. \"Default\" follows the Mac's current input.")
             }
-            if microphoneOn { microphoneModeDetail.padding(.leading, 30).padding(.bottom, 8) }
+            if microphoneOn { MicrophoneModeRow(owner: "record-sheet", deviceID: microphoneID, asksForAccess: true).padding(.leading, 30).padding(.bottom, 8) }
             Divider().padding(.leading, 30)
             sourceRow("Computer audio", symbol: systemAudio ? "speaker.wave.2.fill" : "speaker.slash", isOn: $systemAudio) { EmptyView() }
                 .help("Also record the sound your Mac plays.")
@@ -171,23 +169,6 @@ struct SourceChooser: View {
         .padding(.horizontal, 12)
         .background(RoundedRectangle(cornerRadius: 10).fill(.background.secondary))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-    }
-
-    /// The system's Mic Mode for this app, which only the person can change. Voice Isolation is the one that
-    /// suits a walkthrough, so anything else gets a nudge and a button that opens the system's menu.
-    private var microphoneModeDetail: some View {
-        HStack(spacing: 8) {
-            Image(systemName: micMode == .voiceIsolation ? "checkmark.circle.fill" : "waveform.badge.mic")
-                .foregroundStyle(micMode == .voiceIsolation ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Mic mode: \(micMode.title)").font(.callout)
-                Text(micMode.hint).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Button("Microphone Modes…") { MicrophoneModeStatus.openSystemMenu() }
-                .controlSize(.small)
-                .help("Opens the system's Mic Modes menu: Standard, Voice Isolation or Wide Spectrum. Your choice is remembered for Hot Take. It can also be changed from Control Center while recording.")
-        }
     }
 
     private func sourceRow<Device: View>(_ title: String, symbol: String, isOn: Binding<Bool>, @ViewBuilder device: () -> Device) -> some View {
@@ -235,7 +216,7 @@ struct SourceChooser: View {
                     }
                     .pickerStyle(.segmented).labelsHidden().fixedSize()
                     .help("How big your circle is in the video.")
-                    Button("Video Effects…") { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
+                    Button("Open Camera Settings") { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
                         .controlSize(.small)
                         .help("Opens the system's panel for background blur, Center Stage, Studio Light and more.")
                 }
