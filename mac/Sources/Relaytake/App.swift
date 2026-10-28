@@ -192,6 +192,9 @@ final class RecorderModel: ObservableObject {
         let created = Date()
         let files = TakeFiles(directory: directory, baseName: TakeFiles.baseName(for: created))
         message = ""
+        // The camera starts first. It is already warm from the countdown, and starting it after the screen leaves the first
+        // moments of the video without your circle. Anything it records before the screen begins is trimmed off with the offset.
+        let cameraStart: Date? = useCamera ? await camera.record(to: files.cameraOriginal) : nil
         do {
             try await recorder.start(to: files.video, target: target, microphone: microphone, microphoneID: microphoneID,
                                       systemAudio: systemAudio, includeOwnWindows: keepWindows, quality: recordingQuality)
@@ -204,11 +207,12 @@ final class RecorderModel: ObservableObject {
             pausedTotal = 0
             pausedAt = nil
             paused = false
-            if useCamera, let cameraStart = await camera.record(to: files.cameraOriginal), let screenStart = recorder.startedAt {
+            if let cameraStart, let screenStart = recorder.startedAt {
                 cameraOffset = cameraStart.timeIntervalSince(screenStart)
                 cameraPieces = [files.cameraOriginal]
                 cameraFinishedCleanly = false
             } else if useCamera {
+                if cameraStart != nil { _ = await camera.finish() }
                 message = "The camera did not start, so this take has the screen only."
                 SelfViewPanel.shared.hide()
                 camera.stopPreview()
@@ -219,6 +223,10 @@ final class RecorderModel: ObservableObject {
             RecordingPanel.shared.show(model: self)
         } catch {
             message = "Could not start: \(error.localizedDescription)"
+            if cameraStart != nil {
+                _ = await camera.finish()
+                try? FileManager.default.removeItem(at: files.cameraOriginal)
+            }
             SelfViewPanel.shared.hide()
             camera.stopPreview()
             phase = .idle
