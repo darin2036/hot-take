@@ -924,6 +924,6 @@ struct RelaytakeApp: App {
             AboutView()
         }
         .windowResizability(.contentSize)
-        .commands { AboutCommands() }
+        .commands { AboutCommands(); TranscriptFindCommands() }
     }
 }
