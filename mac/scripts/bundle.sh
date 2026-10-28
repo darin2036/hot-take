@@ -11,6 +11,8 @@ APP="build/Hot Take.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp ../CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
+cp Resources/Help.md "$APP/Contents/Resources/Help.md"
 cp "$(swift build -c release --show-bin-path)/Relaytake" "$APP/Contents/MacOS/Hot Take"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

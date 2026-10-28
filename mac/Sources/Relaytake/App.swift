@@ -1011,12 +1011,12 @@ struct RelaytakeApp: App {
                 exit((try? png?.write(to: URL(fileURLWithPath: args[flag + 1]))) != nil ? 0 : 1)
             }
         }
-        // `Hot Take --welcome-snapshot out.png [seconds]` draws the first-launch welcome at that moment to a PNG.
+        // `Hot Take --welcome-snapshot out.png [seconds] [--reduce-motion]` draws the first-launch welcome at that moment to a PNG.
         if let flag = args.firstIndex(of: "--welcome-snapshot"), args.count > flag + 1 {
             let seconds = args.count > flag + 2 ? Double(args[flag + 2]) ?? 3.5 : 3.5
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
-                let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds).frame(width: 1000, height: 680))
+                let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds, animated: !args.contains("--reduce-motion")).frame(width: 1000, height: 680))
                 host.frame = CGRect(x: 0, y: 0, width: 1000, height: 680)
                 host.layoutSubtreeIfNeeded()
                 guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
