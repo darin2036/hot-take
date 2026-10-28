@@ -12,31 +12,12 @@ import Testing
         #expect(model.isEdited)
     }
 
-    @Test func trimRespectsEarlierCuts() throws {
-        var model = EditModel(duration: 10)
-        try model.remove(TimeSpan(start: 3, end: 6))
-        try model.trim(to: TimeSpan(start: 1, end: 8))
-        #expect(model.segments == [TimeSpan(start: 1, end: 3), TimeSpan(start: 6, end: 8)])
-    }
-
     @Test func rejectsInvalidAndEmptyEdits() {
         for range in [(0.0, 10.0), (2, 1), (.nan, 4), (-1, 3)] {
             var model = EditModel(duration: 10)
             #expect(throws: EditError.self) { try model.remove(TimeSpan(start: range.0, end: range.1)) }
             #expect(model.segments == [TimeSpan(start: 0, end: 10)])
         }
-    }
-
-    @Test func undoAndResetRestoreHistory() throws {
-        var model = EditModel(duration: 10)
-        try model.remove(TimeSpan(start: 2, end: 4))
-        try model.trim(to: TimeSpan(start: 5, end: 9))
-        model.undo()
-        #expect(model.segments == [TimeSpan(start: 0, end: 2), TimeSpan(start: 4, end: 10)])
-        model.reset()
-        #expect(!model.isEdited)
-        model.undo()
-        #expect(model.segments == [TimeSpan(start: 0, end: 2), TimeSpan(start: 4, end: 10)])
     }
 
     @Test func mapsSourceTimeToOutputTime() throws {

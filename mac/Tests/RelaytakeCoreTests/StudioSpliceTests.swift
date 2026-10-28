@@ -141,3 +141,54 @@ import Testing
         #expect(project.isEdited)
     }
 }
+
+@Suite struct SplitItemTests {
+    private func project() -> StudioProject { StudioProject(duration: 20) }
+
+    @Test func splittingATextMakesTwoHalvesThatMeetAtTheSplit() {
+        var project = project()
+        let id = project.addText(at: 2, text: "Hello")
+        let later = project.splitText(id, at: 3.5)
+        #expect(later != nil && later != id)
+        #expect(project.texts.count == 2)
+        #expect(project.texts[0].end == 3.5 && project.texts[1].start == 3.5 && project.texts[1].end == 5)
+        #expect(project.texts[1].text == "Hello" && project.texts[1].heightFraction == project.texts[0].heightFraction)
+    }
+
+    @Test func splittingAZoomKeepsFocusAndScaleAndRefusesSlivers() {
+        var project = project()
+        let id = project.addZoom(at: 2, scale: 2.5)
+        project.updateZoom(id) { $0.x = 0.2; $0.y = 0.7; $0.end = $0.start + 4 }
+        #expect(project.splitZoom(id, at: 2.3) == nil)  // first half would be too short
+        #expect(project.splitZoom(id, at: 5.8) == nil)
+        let later = project.splitZoom(id, at: 4)
+        #expect(later != nil)
+        #expect(project.zooms.map(\.start) == [2, 4] && project.zooms.map(\.end) == [4, 6])
+        #expect(project.zooms.allSatisfy { $0.x == 0.2 && $0.y == 0.7 && $0.scale == 2.5 })
+    }
+
+    @Test func splittingAVoiceoverContinuesFromTheSamePlaceInTheFile() {
+        var project = project()
+        let url = URL(fileURLWithPath: "/tmp/take.m4a")
+        let id = project.addVoiceover(url: url, name: "take", fileDuration: 8, start: 3)
+        project.updateClip(id) { $0.fadeOut = 1 }
+        let later = project.splitClip(id, at: 6)
+        #expect(later != nil)
+        #expect(project.clips[0].length == 3 && project.clips[0].fadeOut == 0)
+        #expect(project.clips[1].start == 6 && project.clips[1].sourceStart == 3 && project.clips[1].length == 5)
+        #expect(project.clips[1].fadeOut == 1)
+        #expect(project.splitClip(id, at: 3.1) == nil)
+    }
+
+    @Test func splittingFittedMusicKeepsTheLaterHalfFittingTheVideoAndWrapsTheLoop() {
+        var project = project()
+        let url = URL(fileURLWithPath: "/tmp/song.m4a")
+        let id = project.addMusic(url: url, name: "song", fileDuration: 5)
+        let later = project.splitClip(id, at: 7)  // the 5 s song has looped once: 2 s into the second run
+        #expect(later != nil)
+        let first = project.clips[0], second = project.clips[1]
+        #expect(first.length == 7 && !first.fitsVideo)
+        #expect(second.fitsVideo && second.loops && abs(second.sourceStart - 2) < 0.001)
+        #expect(project.clips[0].pieces(outputDuration: 20).map(\.length).reduce(0, +) == 7)
+    }
+}

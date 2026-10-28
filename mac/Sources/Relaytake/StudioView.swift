@@ -61,13 +61,18 @@ struct StudioView: View {
         .task { await model.load() }
         .onDisappear {
             model.shutdown()
+            if library.openStudio === model { library.openStudio = nil }
             PlayerWindows.shared.closeAll(ownedBy: model)
             library.theater = nil
         }
         .focusable()
         .focused($focused)
         .focusEffectDisabled()
-        .onAppear { focused = true }
+        .onAppear { focused = true; library.openStudio = model }
+        // Picking something on the timeline (or the picture) must also give the Studio the keyboard. Otherwise
+        // Delete goes to whatever last had focus, such as a slider, or the library behind the Studio, where it
+        // offers to trash the whole recording instead of removing the selected zoom, text or clip.
+        .onChange(of: model.selection) { _, new in if new != .none, !Self.isTyping { focused = true } }
         // Studio shortcuts must never act on keys that are meant for a text field: space types a space,
         // delete erases a letter (not the selected clip), and escape belongs to the field.
         .onKeyPress(.space) { Self.isTyping ? .ignored : { model.togglePlay(); return .handled }() }
@@ -81,10 +86,11 @@ struct StudioView: View {
         }
         .onKeyPress("[") { Self.isTyping ? .ignored : { model.trimBeforePlayhead(); return .handled }() }
         .onKeyPress("]") { Self.isTyping ? .ignored : { model.trimAfterPlayhead(); return .handled }() }
-        .confirmationDialog("Discard your edits?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("Discard Edits", role: .destructive) { close() }
+        .confirmationDialog("Close the Studio?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Keep Draft and Close") { close() }
+            Button("Discard Edits", role: .destructive) { model.discardDraft(); close() }
         } message: {
-            Text("Edits are only kept when you save a copy.")
+            Text("Your edits are saved as you work, so they are here when you come back. Discard them to start over.")
         }
     }
 
@@ -233,7 +239,7 @@ private struct Transport: View {
                 .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
             Button { model.splice() } label: { Label("Splice", systemImage: "scissors") }
                 .keyboardShortcut("b", modifiers: .command)
-                .help("Break the video at the playhead (S or ⌘B). Then click a part to remove it, or drag a splice to move it. [ and ] drop everything before or after the playhead.")
+                .help("Break the video at the playhead (S or ⌘B). Then click a part to remove it, or drag a splice to move it. With a text, zoom or audio clip selected, it splits that item in two instead. [ and ] drop everything before or after the playhead.")
                 .disabled(!model.ready)
 
             Spacer(minLength: 8)

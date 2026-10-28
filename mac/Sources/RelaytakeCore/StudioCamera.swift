@@ -7,13 +7,13 @@ import Foundation
 // Save Copy draws the result. These are the pure rules for that: the style, where the bubble sits,
 // and which stretch of the camera video goes with which stretch of the screen video.
 
-public enum CameraShape: String, CaseIterable, Identifiable, Sendable {
+public enum CameraShape: String, Codable, CaseIterable, Identifiable, Sendable {
     case circle, rounded
     public var id: String { rawValue }
     public var title: String { self == .circle ? "Circle" : "Rounded" }
 }
 
-public enum CameraCorner: String, CaseIterable, Identifiable, Sendable {
+public enum CameraCorner: String, Codable, CaseIterable, Identifiable, Sendable {
     case topLeft, topRight, bottomLeft, bottomRight
     public var id: String { rawValue }
     public var title: String {
@@ -56,7 +56,7 @@ public struct CameraSource: Equatable, Sendable {
 }
 
 /// How the camera looks in the picture. It sits in a corner (the default) or wherever it was dragged to.
-public struct CameraBubble: Equatable, Sendable {
+public struct CameraBubble: Codable, Equatable, Sendable {
     public static let sizeRange = 0.1...0.5
     public static let nudgeRange = -1.0...1.0
     /// Space between the bubble and the picture's edge, as a fraction of the picture's height.

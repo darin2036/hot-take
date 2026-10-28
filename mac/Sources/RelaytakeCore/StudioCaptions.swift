@@ -1,7 +1,7 @@
 import Foundation
 
 /// How captions look when they are drawn into the picture.
-public enum CaptionStyle: String, CaseIterable, Identifiable, Sendable {
+public enum CaptionStyle: String, Codable, CaseIterable, Identifiable, Sendable {
     case classic, bold, minimal, highlight
     public var id: String { rawValue }
 
@@ -50,7 +50,7 @@ public enum CaptionStyle: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public enum CaptionPosition: String, CaseIterable, Identifiable, Sendable {
+public enum CaptionPosition: String, Codable, CaseIterable, Identifiable, Sendable {
     case bottom, middle, top
     public var id: String { rawValue }
     public var title: String { rawValue.capitalized }
@@ -59,7 +59,7 @@ public enum CaptionPosition: String, CaseIterable, Identifiable, Sendable {
 
 /// Captions switched on for a Studio project. `cues` are transcript segments in the *original's* time;
 /// the Studio maps them through the cuts, so removing a section removes its captions too.
-public struct StudioCaptions: Equatable, Sendable {
+public struct StudioCaptions: Codable, Equatable, Sendable {
     public var style: CaptionStyle
     public var position: CaptionPosition
     public var cues: [CaptionSegment]

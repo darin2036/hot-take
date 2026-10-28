@@ -1,3 +1,5 @@
+import SwiftUI
+import UniformTypeIdentifiers
 import AVFoundation
 import Foundation
 import RelaytakeCore
@@ -57,5 +59,38 @@ enum StudioSaver {
         } else {
             try FileManager.default.moveItem(at: file, to: destination)
         }
+    }
+}
+
+/// What the Studio's Share button sends: the edited video, drawn only once the person picks where to send it.
+struct EditedVideo: Transferable {
+    let render: @Sendable () async throws -> URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .mpeg4Movie) { video in
+            SentTransferredFile(try await video.render())
+        }
+    }
+}
+
+/// Share in the toolbar while the Studio is open. With edits (cuts, text, voiceover…) it shares the edited
+/// version; with none it shares the recording as it is.
+struct StudioShareButton: View {
+    @ObservedObject var model: StudioModel
+
+    var body: some View {
+        Group {
+            if model.hasUnsavedChanges {
+                ShareLink(
+                    item: EditedVideo { try await model.renderForSharing() },
+                    preview: SharePreview(model.take.title)
+                ) { Label("Share", systemImage: "square.and.arrow.up") }
+                    .help("Share the video with your Studio edits. Your original is not changed.")
+            } else {
+                ShareLink(item: model.take.files.video) { Label("Share", systemImage: "square.and.arrow.up") }
+                    .help("Share this recording")
+            }
+        }
+        .disabled(!model.ready || model.saveProgress != nil)
     }
 }
