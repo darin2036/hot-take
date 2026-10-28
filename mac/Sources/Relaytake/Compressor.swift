@@ -21,18 +21,20 @@ enum Compressor {
         let size = quality.dimensions(width: abs(rect.width), height: abs(rect.height))
         let sourceFPS = Double(try await track.load(.nominalFrameRate))
         let fps = sourceFPS > 0 ? min(Double(quality.fps), sourceFPS) : Double(quality.fps)
-        let composition = AVMutableVideoComposition()
+        var composition = AVVideoComposition.Configuration()
         composition.renderSize = CGSize(width: size.width, height: size.height)
         composition.frameDuration = CMTime(seconds: 1 / fps, preferredTimescale: 60_000)
-        let instruction = AVMutableVideoCompositionInstruction()
+        var instruction = AVVideoCompositionInstruction.Configuration()
         instruction.timeRange = CMTimeRange(start: .zero, duration: duration)
-        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        var layer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: track)
         let scaled = transform.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
             .concatenating(CGAffineTransform(scaleX: Double(size.width) / abs(rect.width), y: Double(size.height) / abs(rect.height)))
         layer.setTransform(scaled, at: .zero)
-        instruction.layerInstructions = [layer]; composition.instructions = [instruction]
+        instruction.layerInstructions = [AVVideoCompositionLayerInstruction(configuration: layer)]
+        composition.instructions = [AVVideoCompositionInstruction(configuration: instruction)]
+        let builtComposition = AVVideoComposition(configuration: composition)
         let videoOut = AVAssetReaderVideoCompositionOutput(videoTracks: [track], videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-        videoOut.videoComposition = composition; videoOut.alwaysCopiesSampleData = false
+        videoOut.videoComposition = builtComposition; videoOut.alwaysCopiesSampleData = false
         let videoIn = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
             AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: quality.videoBitrate,

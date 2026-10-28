@@ -898,7 +898,7 @@ final class MenuPlayerView: AVPlayerView {
     var fileURL: URL?
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let fileURL else { return super.menu(for: event) }
+        guard fileURL != nil else { return super.menu(for: event) }
         let menu = NSMenu()
         let reveal = NSMenuItem(title: "Show in Folder", action: #selector(reveal), keyEquivalent: "")
         reveal.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)

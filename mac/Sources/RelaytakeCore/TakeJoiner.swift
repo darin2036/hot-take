@@ -131,21 +131,21 @@ public enum TakeJoiner {
     /// Each clip scaled to fit one picture size, with bars where its shape differs.
     private static func video(
         _ composition: AVMutableComposition, clips: [(range: CMTimeRange, size: CGSize, transform: CGAffineTransform)], sizes: [CGSize]
-    ) -> AVMutableVideoComposition? {
+    ) -> AVVideoComposition? {
         guard let track = composition.tracks(withMediaType: .video).first else { return nil }
         let canvas = JoinPlan.renderSize(for: sizes)
-        let video = AVMutableVideoComposition()
+        var video = AVVideoComposition.Configuration()
         video.renderSize = canvas
         video.frameDuration = CMTime(value: 1, timescale: 30)
         video.instructions = clips.map { clip in
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = clip.range
-            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+            var layer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: track)
             layer.setTransform(clip.transform.concatenating(JoinPlan.fit(clip.size, into: canvas)), at: clip.range.start)
-            instruction.layerInstructions = [layer]
-            return instruction
+            var instruction = AVVideoCompositionInstruction.Configuration()
+            instruction.timeRange = clip.range
+            instruction.layerInstructions = [AVVideoCompositionLayerInstruction(configuration: layer)]
+            return AVVideoCompositionInstruction(configuration: instruction)
         }
-        return video
+        return AVVideoComposition(configuration: video)
     }
 
     private static func export(
