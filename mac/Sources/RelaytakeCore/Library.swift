@@ -164,6 +164,7 @@ public enum TakeLibrary {
     /// Moves the take's files to the Trash. Never deletes permanently.
     public static func trash(_ entry: TakeEntry, fileManager: FileManager = .default) throws {
         for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft]
+            + entry.files.audioFiles()
         where fileManager.fileExists(atPath: url.path) {
             try fileManager.trashItem(at: url, resultingItemURL: nil)
         }
@@ -231,11 +232,26 @@ public enum TakeLibrary {
             (entry.files.screenOriginal, moved.screenOriginal), (entry.files.cameraOriginal, moved.cameraOriginal),
             (entry.files.draft, moved.draft),
         ]
-        for (from, to) in pairs where fileManager.fileExists(atPath: from.path) {
+        // Audio that came with a shared take moves with it.
+        let audioPairs = entry.files.audioFiles().map { from -> (URL, URL) in
+            let suffix = String(from.lastPathComponent.dropFirst(entry.files.baseName.count))
+            return (from, moved.audioDirectory.appendingPathComponent(moved.baseName + suffix))
+        }
+        for (from, to) in pairs + audioPairs where fileManager.fileExists(atPath: from.path) {
             if from.deletingLastPathComponent() != to.deletingLastPathComponent() {
                 try fileManager.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
             }
             try fileManager.moveItem(at: from, to: to)
+        }
+        // The draft names its audio files by path, so follow them to the new place.
+        let store = StudioDraftStore(files: moved)
+        if var draft = store.load() {
+            let oldPrefix = entry.files.audioDirectory.path + "/" + entry.files.baseName
+            for index in draft.clips.indices where draft.clips[index].url.path.hasPrefix(oldPrefix) {
+                let suffix = String(draft.clips[index].url.lastPathComponent.dropFirst(entry.files.baseName.count))
+                draft.clips[index].url = moved.audioDirectory.appendingPathComponent(moved.baseName + suffix)
+            }
+            if let data = store.encode(draft) { store.write(data) }
         }
         return moved
     }

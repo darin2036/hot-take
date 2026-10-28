@@ -65,11 +65,11 @@ public enum StudioComposer {
         for source in includeAudio ? try await asset.loadTracks(withMediaType: .audio) : [] {
             guard let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             else { continue }
-            var cursor = CMTime.zero
-            for segment in project.cuts.segments {
-                let range = CMTimeRange(start: time(segment.start), duration: time(segment.length))
-                try track.insertTimeRange(range, of: source, at: cursor)
-                cursor = cursor + range.duration
+            // Following the video's cuts, or cut on its own (the parts may leave silence between them).
+            for part in project.originalAudioParts {
+                let length = min(part.length, total - part.start)
+                guard length > 0 else { continue }
+                try track.insertTimeRange(CMTimeRange(start: time(part.source.start), duration: time(length)), of: source, at: time(part.start))
             }
             let input = AVMutableAudioMixInputParameters(track: track)
             input.setVolume(originalVolume, at: .zero)

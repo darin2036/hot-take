@@ -79,6 +79,17 @@ struct StudioShareButton: View {
     @ObservedObject var model: StudioModel
 
     var body: some View {
+        HStack(spacing: 4) { shareLink; projectButton }
+    }
+
+    /// One `.hottake` file with the recording and the edit, for a teammate to open and carry on.
+    private var projectButton: some View {
+        Button { model.shareProject() } label: { Label("Save Project", systemImage: "shippingbox") }
+            .help("Save the recording and your edit as one Hot Take file a teammate can open and keep editing")
+            .disabled(!model.ready || model.saveProgress != nil)
+    }
+
+    private var shareLink: some View {
         Group {
             if model.hasUnsavedChanges {
                 ShareLink(

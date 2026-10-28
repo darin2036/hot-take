@@ -24,6 +24,20 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>CFBundleDocumentTypes</key><array><dict>
+    <key>CFBundleTypeName</key><string>Hot Take</string>
+    <key>CFBundleTypeRole</key><string>Editor</string>
+    <key>LSHandlerRank</key><string>Owner</string>
+    <key>LSItemContentTypes</key><array><string>org.relaytake.hottake</string></array>
+  </dict></array>
+  <key>UTExportedTypeDeclarations</key><array><dict>
+    <key>UTTypeIdentifier</key><string>org.relaytake.hottake</string>
+    <key>UTTypeDescription</key><string>Hot Take</string>
+    <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    <key>UTTypeTagSpecification</key><dict>
+      <key>public.filename-extension</key><array><string>hottake</string></array>
+    </dict>
+  </dict></array>
   <key>NSCameraUsageDescription</key><string>Hot Take shows your camera as a bubble on your screen recording when you choose a camera.</string>
   <key>NSCameraUseContinuityCameraDeviceType</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Hot Take records your voice into the video when Microphone is on.</string>
@@ -34,8 +48,30 @@ IDENTITY="${RELAYTAKE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 
 if [ -n "$IDENTITY" ]; then
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac "$APP"
   echo "Signed with: $IDENTITY"
-else
+elif [ "${RELAYTAKE_ALLOW_ADHOC:-0}" = "1" ]; then
   codesign --force --sign - "$APP"
-  echo "Signed ad-hoc: the system will forget Screen Recording permission after every rebuild."
+  echo "Signed ad-hoc (allowed by RELAYTAKE_ALLOW_ADHOC=1): the system will forget Screen Recording permission after every rebuild."
+else
+  # An ad-hoc build has a different identity from every signed one, so the system quietly stops honoring the
+  # Screen Recording grant (the switch in System Settings still looks on). Stop rather than do that by accident,
+  # for example when the keychain is locked or this runs somewhere the certificate is not available.
+  rm -rf "$APP"
+  echo "error: no Apple Development signing certificate is available, so the app was not built." >&2
+  echo "       Unlock the login keychain / add a free Apple Development certificate in Xcode, or set" >&2
+  echo "       RELAYTAKE_SIGN_IDENTITY, or RELAYTAKE_ALLOW_ADHOC=1 to accept losing permissions." >&2
+  exit 1
 fi
+
+# The system keys Screen Recording, Microphone and Camera grants to the app's "designated requirement". Remember
+# it; if it ever changes (a different certificate, or a build that was signed ad hoc), the old grants no longer
+# match this app, so clear them and the next launch asks again instead of silently failing. Set
+# RELAYTAKE_RESET_PERMISSIONS=1 to clear them on purpose, for a grant that went stale before this check existed.
+REQUIREMENT="$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^designated => //p')"
+STAMP="build/.signing-requirement"
+if [ "${RELAYTAKE_RESET_PERMISSIONS:-0}" = "1" ] || { [ -f "$STAMP" ] && [ "$(cat "$STAMP")" != "$REQUIREMENT" ]; }; then
+  for service in ScreenCapture Microphone Camera; do tccutil reset "$service" org.relaytake.mac >/dev/null 2>&1 || true; done
+  echo "Cleared Hot Take's Screen Recording, Microphone and Camera permissions. Open the app and allow them again;"
+  echo "after allowing Screen Recording, quit and reopen the app."
+fi
+printf '%s' "$REQUIREMENT" > "$STAMP"
 echo "Built $APP"

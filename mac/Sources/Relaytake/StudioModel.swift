@@ -22,7 +22,9 @@ final class StudioModel: ObservableObject {
         case text(UUID)
         case zoom(UUID)
         case clip(UUID)
+        /// The recording's own sound as a whole, or (once it has been cut on its own) one part of it.
         case original
+        case audioPart(UUID)
     }
 
     enum VoiceState: Equatable {
@@ -61,7 +63,7 @@ final class StudioModel: ObservableObject {
     @Published private(set) var levels: [URL: [Double]] = [:]
 
     /// Progress of saving, 0...1, or nil when not saving.
-    @Published private(set) var saveProgress: Double?
+    @Published var saveProgress: Double?
     @Published private(set) var saveStatus = ""
 
     private var history = UndoStack<StudioProject>()
@@ -363,6 +365,7 @@ final class StudioModel: ObservableObject {
         case .text(let id) where project.text(id) == nil: selection = .none
         case .clip(let id) where project.clip(id) == nil: selection = .none
         case .zoom(let id) where project.zoom(id) == nil: selection = .none
+        case .audioPart(let id) where project.originalAudioPart(id) == nil: selection = .none
         case .range(let range) where range.end > project.outputDuration + 0.01: selection = .none
         default: break
         }
@@ -407,7 +410,8 @@ final class StudioModel: ObservableObject {
     func splice() {
         guard ready else { return }
         // With a text, zoom or audio clip selected, splice cuts that item in two at the playhead and leaves the
-        // video alone. Pick nothing to splice the video.
+        // video alone; the same for the Audio track, which then has cuts of its own. Pick nothing to splice the
+        // video (and, with it, the recording's sound).
         if splitSelectedItem() { return }
         var done = false
         edit { done = $0.splice(at: self.time) }
@@ -426,6 +430,13 @@ final class StudioModel: ObservableObject {
             if let later { selection = .zoom(later) }
         case .clip(let id): edit { later = $0.splitClip(id, at: at) }
             if let later { selection = .clip(later) }
+        case .original, .audioPart:
+            var done = false
+            edit { done = $0.spliceOriginalAudio(at: at) }
+            if done { selection = .original } else {
+                info = "Move the playhead inside a part of the audio, away from its edges and other splices, to splice it."
+            }
+            return true
         default: return false
         }
         if later == nil { info = "Move the playhead inside the selected item, away from its ends, to split it." }
@@ -507,10 +518,17 @@ final class StudioModel: ObservableObject {
         case .text(let id): edit { $0.removeText(id) }
         case .zoom(let id): edit { $0.removeZoom(id) }
         case .clip(let id): edit { $0.removeClip(id) }
+        case .audioPart(let id): edit { $0.removeOriginalAudioPart(id) }
         case .range(let range): removeSection(range)
         default: return
         }
         selection = .none
+    }
+
+    /// Makes the recording's sound follow the video's cuts again.
+    func relinkOriginalAudio() {
+        edit { $0.relinkOriginalAudio() }
+        selection = .original
     }
 
     /// Applies cuts suggested from the *original* recording by mapping them onto the edited timeline.

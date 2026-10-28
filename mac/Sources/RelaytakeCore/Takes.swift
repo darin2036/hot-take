@@ -27,6 +27,16 @@ public struct TakeFiles: Equatable, Sendable {
     public var draftsDirectory: URL { directory.appendingPathComponent(".hot-take-drafts", isDirectory: true) }
     public var draft: URL { draftsDirectory.appendingPathComponent(baseName + ".studio.json") }
     public var originalsDirectory: URL { directory.appendingPathComponent(".hot-take-originals", isDirectory: true) }
+    /// Audio that came with a shared take (music, voiceovers), kept out of sight beside it.
+    public var audioDirectory: URL { directory.appendingPathComponent(".hot-take-audio", isDirectory: true) }
+    public func audioFile(number: Int, extension ext: String) -> URL {
+        audioDirectory.appendingPathComponent("\(baseName).\(number).\(ext)")
+    }
+    /// Every audio file kept for this take.
+    public func audioFiles(fileManager: FileManager = .default) -> [URL] {
+        let names = (try? fileManager.contentsOfDirectory(atPath: audioDirectory.path)) ?? []
+        return names.filter { $0.hasPrefix(baseName + ".") }.map { audioDirectory.appendingPathComponent($0) }
+    }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
 

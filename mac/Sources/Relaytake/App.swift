@@ -552,6 +552,13 @@ extension Notification.Name {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Double-clicking a `.hottake` file (or dropping one on the icon) adds it to the library.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.pathExtension.lowercased() == HotTakeFile.fileExtension {
+            Task { @MainActor in LibraryModel.shared.openPackage(url) }
+        }
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { NotificationCenter.default.post(name: .relaytakeReopen, object: nil) }
         return false
@@ -924,6 +931,6 @@ struct RelaytakeApp: App {
             AboutView()
         }
         .windowResizability(.contentSize)
-        .commands { AboutCommands(); TranscriptFindCommands() }
+        .commands { AboutCommands(); TranscriptFindCommands(); SharedProjectCommands() }
     }
 }

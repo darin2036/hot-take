@@ -430,15 +430,44 @@ private struct OriginalTrack: View {
     var body: some View {
         let selected = model.selection == .original
         let volume = model.project.originalVolume
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(selected ? 0.4 : 0.22))
-            Waveform(levels: model.levels[model.take.files.video], duration: total, color: .green.opacity(volume == 0 ? 0.25 : 0.9)) { t in
-                model.project.cuts.sourceTime(forOutput: t)
+        let levels = model.levels[model.take.files.video]
+        let color = Color.green.opacity(volume == 0 ? 0.25 : 0.9)
+        let linked = model.project.originalAudioFollowsVideo
+        let parts = model.project.originalAudioParts
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 6).fill(linked ? Color.green.opacity(selected ? 0.4 : 0.22) : Color.secondary.opacity(selected ? 0.25 : 0.12))
+            if linked {
+                Waveform(levels: levels, duration: total, color: color) { t in model.project.cuts.sourceTime(forOutput: t) }
+                    .padding(.vertical, 3)
+            } else {
+                ForEach(parts) { part in
+                    let partSelected = model.selection == .audioPart(part.id)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6).fill(Color.green.opacity(partSelected ? 0.4 : 0.22))
+                        Waveform(levels: levels, duration: part.length, color: color) { t in part.source.start + t }
+                            .padding(.vertical, 3)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: partSelected ? 2 : 0))
+                    .frame(width: max(2, part.length * pps), height: Metrics.row - 4)
+                    .offset(x: part.start * pps, y: 2)
+                    .onTapGesture { model.select(.audioPart(part.id)) }
+                }
             }
-            .padding(.vertical, 3)
+            // The scissors show each break: dark where parts touch, orange where sound was taken out.
+            ForEach(Array(zip(parts, parts.dropFirst()).enumerated()), id: \.offset) { _, pair in
+                let touching = abs(pair.0.end - pair.1.start) < 0.001
+                Image(systemName: "scissors").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(touching ? Color(white: 0.2) : Color.orange))
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: pair.0.end * pps - 8, y: -5)
+                    .allowsHitTesting(false)
+            }
             Text(volume == 0 ? "Original audio · muted" : "Original audio" + (volume == 1 ? "" : " · \(Int(volume * 100))%"))
                 .font(.system(size: 10, weight: .semibold)).padding(.horizontal, 6).padding(.vertical, 1)
                 .background(.black.opacity(0.45), in: Capsule()).foregroundStyle(.white).padding(.leading, 4)
+                .frame(height: Metrics.row, alignment: .leading)
+                .allowsHitTesting(false)
         }
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: selected ? 2 : 0))
         .frame(height: Metrics.row)
