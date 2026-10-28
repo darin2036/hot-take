@@ -24,8 +24,10 @@ enum TestMedia {
     }
 
     /// A solid-color H.264 video, optionally with a tone as its sound.
-    static func video(seconds: Double, color: (UInt8, UInt8, UInt8), toneHz: Double? = nil) async throws -> URL {
-        let width = 320, height = 180, fps = 15
+    static func video(
+        seconds: Double, color: (UInt8, UInt8, UInt8), toneHz: Double? = nil, width: Int = 320, height: Int = 180
+    ) async throws -> URL {
+        let fps = 15
         let silent = tempURL("mp4")
         let writer = try AVAssetWriter(outputURL: silent, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [

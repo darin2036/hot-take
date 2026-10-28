@@ -41,6 +41,23 @@ enum StudioSnapshot {
             if variant == "gap", let part = model.project.cuts.partSpans.dropFirst().first { model.removeSection(part) }
         }
 
+        // "marks": an arrow, a box and a blur on the picture, rings at the noted clicks, and the arrow chosen.
+        if variant == "marks" {
+            model.edit { project in
+                project.setClickHighlights(on: true, clicks: model.clicks)
+                let box = project.addShape(.box, at: 2)
+                project.updateShape(box) { $0.start = 2; $0.end = 7 }
+                let blur = project.addShape(.blur, at: 4)
+                project.updateShape(blur) { $0.start = 4; $0.end = 9 }
+            }
+            model.edit { project in
+                let id = project.addShape(.arrow, at: 1)
+                project.updateShape(id) { $0.start = 1; $0.end = 6 }
+            }
+            if let arrow = model.project.shapes.last { model.select(.shape(arrow.id)) }
+            model.seek(to: 3)
+        }
+
         if variant == "tighten" {
             model.showTighten([
                 EditSuggestion(kind: .silence, span: TimeSpan(start: 2.2, end: 4.4), reason: "Quiet for 2.2 s"),

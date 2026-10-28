@@ -72,11 +72,17 @@ struct CanvasEffects: @unchecked Sendable {
     let backdrop: CIImage?
     let mask: CIImage?
     let zooms: [ZoomSegment]
+    /// Arrows, boxes, blurs and click rings, drawn on the recorded picture before any zoom.
+    let annotations: AnnotationLayer?
 
-    init(canvas: CGSize, source: CGSize, background: WindowBackground?, zooms: [ZoomSegment]) {
+    init(
+        canvas: CGSize, source: CGSize, background: WindowBackground?, zooms: [ZoomSegment],
+        shapes: [ShapeOverlay] = [], clickHighlight: ClickHighlight? = nil, cuts: EditModel? = nil
+    ) {
         self.canvas = canvas
         self.zooms = zooms
         content = CanvasLayout.contentRect(canvas: canvas, source: source, background: background)
+        annotations = AnnotationLayer(canvas: canvas, content: content, shapes: shapes, highlight: clickHighlight, cuts: cuts)
         if let background, let layers = Self.layers(canvas: canvas, content: content, background: background) {
             backdrop = layers.backdrop
             mask = layers.mask
@@ -139,6 +145,7 @@ struct CanvasEffects: @unchecked Sendable {
             image = placed.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: backdrop, kCIInputMaskImageKey: mask])
                 .cropped(to: bounds)
         }
+        if let annotations { image = annotations.draw(over: image, at: time) }
         let state = ZoomCamera.state(at: time, zooms: zooms)
         if state.zoom > 1.0001 {
             let focus = CanvasLayout.canvasPoint(forSource: state.focusX, state.focusY, content: content, canvas: canvas)

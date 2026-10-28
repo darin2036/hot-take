@@ -37,6 +37,10 @@ public struct TakeFiles: Equatable, Sendable {
         let names = (try? fileManager.contentsOfDirectory(atPath: audioDirectory.path)) ?? []
         return names.filter { $0.hasPrefix(baseName + ".") }.map { audioDirectory.appendingPathComponent($0) }
     }
+    /// The take turned into a request for a coding agent (`PROMPT.md` and its pictures), out of sight beside it.
+    public var agentDirectory: URL {
+        directory.appendingPathComponent(".hot-take-agent", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
+    }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
 
@@ -79,12 +83,25 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
     public var cameraOffset: Double?
     /// Where the presenter bubble was placed while recording. Nil means the default corner.
     public var cameraPlacement: CameraPlacement?
+    /// The moment (seconds into the video) chosen as the picture shown for this take in the library. Nil
+    /// uses the opening of the video.
+    public var thumbnailTime: Double?
+    /// The transcript translated on this Mac, keyed by language identifier ("es", "fr", "ja"). Each one has the
+    /// same lines and timing as `transcript`; it is dropped whenever the transcript changes. Empty when none.
+    public var translations: [String: [CaptionSegment]]
+    /// The parts of the recording: suggested from the transcript, then kept, renamed, moved or removed by the person.
+    /// Times are seconds into this take's video, so a copy with parts cut out does not carry them. Empty when none.
+    public var chapters: [Chapter]
+    /// Whether this recording's transcript shows chapters. Nil follows the app-wide default; set when the person turns
+    /// them on or off for this recording (or removes every chapter). Turning them off keeps the saved chapters.
+    public var chaptersEnabled: Bool?
 
     public init(
         title: String, summary: String, created: Date, durationSeconds: Double? = nil,
         transcript: [CaptionSegment] = [], tags: [String] = [], notes: String = "",
         clicks: [ClickEvent] = [], captureKind: String? = nil, derivedFrom: String? = nil, cameraOffset: Double? = nil,
-        cameraPlacement: CameraPlacement? = nil
+        cameraPlacement: CameraPlacement? = nil, thumbnailTime: Double? = nil,
+        translations: [String: [CaptionSegment]] = [:], chapters: [Chapter] = [], chaptersEnabled: Bool? = nil
     ) {
         self.title = title
         self.summary = summary
@@ -98,6 +115,10 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         self.derivedFrom = derivedFrom
         self.cameraOffset = cameraOffset
         self.cameraPlacement = cameraPlacement
+        self.thumbnailTime = thumbnailTime
+        self.translations = translations
+        self.chapters = chapters
+        self.chaptersEnabled = chaptersEnabled
     }
 
     /// Older sidecars have no tags or notes; they decode with empty values.
@@ -115,6 +136,10 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         derivedFrom = try c.decodeIfPresent(String.self, forKey: .derivedFrom)
         cameraOffset = try c.decodeIfPresent(Double.self, forKey: .cameraOffset)
         cameraPlacement = try c.decodeIfPresent(CameraPlacement.self, forKey: .cameraPlacement)
+        thumbnailTime = try c.decodeIfPresent(Double.self, forKey: .thumbnailTime)
+        translations = try c.decodeIfPresent([String: [CaptionSegment]].self, forKey: .translations) ?? [:]
+        chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? []
+        chaptersEnabled = try c.decodeIfPresent(Bool.self, forKey: .chaptersEnabled)
     }
 
     /// Keeps what was seen while recording (clicks, what was captured) on a take whose metadata is being
@@ -125,6 +150,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         derivedFrom = existing.derivedFrom
         cameraOffset = existing.cameraOffset
         cameraPlacement = existing.cameraPlacement
+        thumbnailTime = existing.thumbnailTime
     }
 
     /// "demo, bug report,  Demo" → ["demo", "bug report"]: trimmed, de-duplicated ignoring case.

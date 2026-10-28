@@ -22,9 +22,15 @@ final class RecorderModel: ObservableObject {
     @Published var choosing = false
     /// Bumped to ask the always-alive menu-bar label to open the library window.
     @Published var libraryRequest = 0
+    /// Good news to show for a while (a saved screenshot), and the file it is about.
+    @Published var notice = ""
+    @Published var noticeFile: URL?
+
+    /// The one recorder the app runs, for library tools that report through its status banner.
+    private(set) static weak var current: RecorderModel?
 
     // Edited in SettingsView; read here when a recording starts or finishes.
-    private func flag(_ key: String) -> Bool {
+    func flag(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
 
@@ -59,7 +65,26 @@ final class RecorderModel: ObservableObject {
         var systemAudio: Bool
         var keepWindows: Bool
         var useCamera: Bool
+        var hideNotifications: Bool
     }
+
+    /// A take of the camera alone: the camera's picture and the microphone's sound, recorded separately and put
+    /// together when it stops.
+    private struct CameraOnlyTake {
+        var files: TakeFiles
+        var created: Date
+        var cameraFile: URL
+        var cameraStart: Date
+        var microphone: MicrophoneRecorder?
+        var micFile: URL?
+        var micStart: Date?
+    }
+    private var cameraOnly: CameraOnlyTake?
+
+    /// Whether Pause does anything for this take (a camera-only take cannot be paused).
+    var canPause: Bool { takeOptions != nil }
+
+    private var hideNotifications: Bool { flag(Pref.hideNotifications) }
 
     /// Time recorded so far, not counting paused time.
     func elapsed(at date: Date) -> TimeInterval {
@@ -74,7 +99,107 @@ final class RecorderModel: ObservableObject {
     /// Used by the `--record-check` test mode to keep its take out of the library.
     var directoryOverride: URL?
 
-    init() { watchForUnexpectedStop() }
+    init() {
+        Self.current = self
+        watchForUnexpectedStop()
+        // Shortcuts that work in any app.
+        GlobalHotkeys.shared.onTrigger = { [weak self] action in self?.handle(action) }
+        GlobalHotkeys.shared.refresh()
+    }
+
+    // MARK: Shortcuts and quick capture
+
+    func handle(_ action: HotkeyAction) {
+        switch action {
+        case .startStop:
+            if isRecording { toggle() } else { quickRecord() }
+        case .startAgent:
+            if isRecording { toggle() } else { quickRecordForAgent() }
+        case .pause:
+            if isRecording, canPause { paused ? resume() : pause() }
+        case .screenshot:
+            quickScreenshot()
+        }
+    }
+
+    /// The display Quick Record and screenshots use: the one recorded last if it is still there, else the main one.
+    private func quickDisplay() -> CGDirectDisplayID? {
+        let last = UserDefaults.standard.object(forKey: Pref.lastDisplay) as? Int
+        return QuickCapturePlan.display(
+            last: last.flatMap { UInt32(exactly: $0) }, connected: NSScreen.screens.compactMap(\.displayID), main: NSScreen.main?.displayID)
+    }
+
+    /// Starts recording a whole screen right away with the settings used last, after the usual countdown. No sheet.
+    func quickRecord() {
+        guard phase == .idle else { return }
+        guard let display = quickDisplay() else { message = "No display was found to record."; return }
+        begin(.screen(display))
+    }
+
+    /// Quick Record for this take only: when it stops, it is also turned into a request for a coding agent, whatever
+    /// the "For an agent" checkbox says. The checkbox itself is left as it was.
+    func quickRecordForAgent() {
+        guard phase == .idle else { return }
+        guard let display = quickDisplay() else { message = "No display was found to record."; return }
+        begin(.screen(display), forAgent: true)
+    }
+
+    /// Set by a Quick Take for Agent and reset by every new take, so a take that never started cannot leak into the next.
+    private var quickAgent = false
+
+    func quickScreenshot() {
+        guard phase == .idle, let display = quickDisplay() else { return }
+        takeScreenshot(.screen(display))
+    }
+
+    /// Saves a PNG of a screen, window or area into the folder being viewed.
+    func takeScreenshot(_ choice: SourceChoice) {
+        guard phase == .idle else { return }
+        choosing = false
+        message = ""
+        notice = ""
+        guard ensureScreenPermission() else { return }
+        phase = .processing("Taking a screenshot…")
+        Task {
+            defer { phase = .idle }
+            do {
+                let target: RecordingTarget?
+                switch choice {
+                case .screen(let id): target = .display(id)
+                case .window(let filter): target = .window(filter)
+                case .windowOrApp:
+                    let picker = ContentPicker()
+                    contentPicker = picker
+                    let filter = await picker.pick()
+                    contentPicker = nil
+                    target = filter.map { .window($0) }
+                case .area:
+                    // Out of the way so the whole screen can be picked from. Hot Take itself is never in the picture.
+                    minimizeWindows()
+                    let selector = RegionSelector()
+                    regionSelector = selector
+                    let selection = await selector.select()
+                    regionSelector = nil
+                    restoreWindows()
+                    target = selection.map { .region(display: $0.displayID, rect: $0.rect) }
+                case .camera: target = nil
+                }
+                guard let target else { return }
+                // Let the sheet or the picker finish leaving the screen before looking at it.
+                try? await Task.sleep(for: .milliseconds(250))
+                let image = try await ScreenshotTaker.capture(target, hideNotifications: hideNotifications)
+                let url = Screenshot.uniqueURL(in: directory, for: Date())
+                try Screenshot.writePNG(image, to: url)
+                if case .display(let id) = target { UserDefaults.standard.set(Int(id), forKey: Pref.lastDisplay) }
+                noticeFile = url
+                notice = "Saved the screenshot “\(url.lastPathComponent)”."
+            } catch {
+                message = "Could not take the screenshot: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func clearNotice() { notice = ""; noticeFile = nil }
 
     var isRecording: Bool { if case .recording = phase { true } else { false } }
     var isBusy: Bool { if case .idle = phase { false } else if isRecording { false } else { true } }
@@ -95,12 +220,16 @@ final class RecorderModel: ObservableObject {
         /// A window chosen from the previews in the record sheet.
         case window(SCContentFilter)
         case area
+        /// The camera on its own, with the microphone, and no screen.
+        case camera
     }
 
-    func begin(_ choice: SourceChoice) {
+    func begin(_ choice: SourceChoice, forAgent: Bool = false) {
         guard phase == .idle else { return }
+        quickAgent = forAgent
         choosing = false
         message = ""
+        if case .camera = choice { beginCameraOnly(); return }
         guard ensureScreenPermission() else { return }
         phase = .processing("Choosing source…")
         Task {
@@ -116,6 +245,8 @@ final class RecorderModel: ObservableObject {
                 let filter = await picker.pick()
                 contentPicker = nil
                 if let filter { await start(target: .window(filter)) }
+            case .camera:
+                break  // handled before the screen is asked for
             case .area:
                 if !UserDefaults.standard.bool(forKey: Pref.includeOwnWindows) { minimizeWindows() }  // so the whole screen is visible to select from
                 let selector = RegionSelector()
@@ -154,6 +285,10 @@ final class RecorderModel: ObservableObject {
     private func start(target: RecordingTarget) async {
         recordingQuality = EncodingPreferences.resolve(VideoQuality(rawValue: UserDefaults.standard.string(forKey: Pref.quality) ?? "medium") ?? .medium)
         lastTarget = target
+        switch target {
+        case .display(let id), .region(let id, _): UserDefaults.standard.set(Int(id), forKey: Pref.lastDisplay)
+        case .window: break
+        }
         phase = .processing("Starting recording…")
         let microphone = flag(Pref.microphone) && !silent
         let microphoneID = UserDefaults.standard.string(forKey: Pref.microphoneDevice) ?? ""
@@ -197,10 +332,10 @@ final class RecorderModel: ObservableObject {
         let cameraStart: Date? = useCamera ? await camera.record(to: files.cameraOriginal) : nil
         do {
             try await recorder.start(to: files.video, target: target, microphone: microphone, microphoneID: microphoneID,
-                                      systemAudio: systemAudio, includeOwnWindows: keepWindows, quality: recordingQuality)
+                                      systemAudio: systemAudio, includeOwnWindows: keepWindows, hideNotifications: hideNotifications, quality: recordingQuality)
             current = (files, created)
             takeOptions = TakeOptions(target: target, microphone: microphone, microphoneID: microphoneID, systemAudio: systemAudio,
-                                      keepWindows: keepWindows, useCamera: useCamera)
+                                      keepWindows: keepWindows, useCamera: useCamera, hideNotifications: hideNotifications)
             takeStart = recorder.startedAt ?? Date()
             screenPieces = [files.video]
             cameraPieces = []
@@ -239,6 +374,7 @@ final class RecorderModel: ObservableObject {
     /// underway, so a double click cannot start two.
     func restart() {
         guard isRecording, !restarting, let current else { return }
+        if cameraOnly != nil { restartCameraOnly(); return }
         restarting = true
         Task {
             defer { restarting = false }
@@ -287,7 +423,8 @@ final class RecorderModel: ObservableObject {
             do {
                 let resumedAt = Date()
                 try await recorder.start(to: video, target: options.target, microphone: options.microphone, microphoneID: options.microphoneID,
-                                         systemAudio: options.systemAudio, includeOwnWindows: options.keepWindows, quality: recordingQuality)
+                                         systemAudio: options.systemAudio, includeOwnWindows: options.keepWindows,
+                                         hideNotifications: options.hideNotifications, quality: recordingQuality)
                 screenPieces.append(video)
                 pausedTotal += resumedAt.timeIntervalSince(stoppedAt)
                 pausedAt = nil
@@ -307,6 +444,134 @@ final class RecorderModel: ObservableObject {
         }
     }
 
+    // MARK: Camera-only takes
+
+    private func beginCameraOnly() {
+        guard phase == .idle else { return }
+        phase = .processing("Starting the camera…")
+        Task {
+            defer { if !isRecording { phase = .idle } }
+            await startCameraOnly()
+        }
+    }
+
+    /// Records the camera and the microphone, with no screen, after the usual countdown. The two files are
+    /// put together when it stops.
+    private func startCameraOnly() async {
+        let cameraID = UserDefaults.standard.string(forKey: Pref.cameraDevice) ?? ""
+        await camera.requestAccess()
+        guard camera.isAuthorized else {
+            message = "Camera access is off. Turn it on in System Settings → Privacy & Security → Camera."
+            return
+        }
+        guard !cameraID.isEmpty, await camera.configure(cameraID: cameraID) else {
+            message = cameraID.isEmpty ? "Choose a camera in the record sheet first." : "That camera is not available. \(camera.problem)"
+            return
+        }
+        let wantsMicrophone = flag(Pref.microphone) && !silent
+        if wantsMicrophone, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+        }
+        camera.startPreview()  // warms up during the countdown
+        phase = .processing("Starting recording…")
+        guard await RecordingCountdown().run(on: NSScreen.main.map { [$0] } ?? []) else {
+            camera.stopPreview()
+            return
+        }
+        let created = Date()
+        let files = TakeFiles(directory: directory, baseName: TakeFiles.baseName(for: created))
+        let cameraFile = files.pieceURL(number: 0, extension: "mov")
+        var microphone: MicrophoneRecorder?
+        var micFile: URL?
+        var micStart: Date?
+        if wantsMicrophone, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+            let choice = Microphone.chosen(id: UserDefaults.standard.string(forKey: Pref.microphoneDevice) ?? "")
+            let file = files.pieceURL(number: 0, extension: "m4a")
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let recorder = MicrophoneRecorder(url: file)
+            do {
+                try recorder.start(device: choice.device)
+                microphone = recorder
+                micFile = file
+                micStart = Date()
+            } catch {
+                message = "The microphone did not start, so this take has no sound. \(error.localizedDescription)"
+            }
+        }
+        guard let cameraStart = await camera.record(to: cameraFile) else {
+            microphone?.discard()
+            camera.stopPreview()
+            message = "The camera did not start. \(camera.problem)"
+            return
+        }
+        cameraOnly = CameraOnlyTake(
+            files: files, created: created, cameraFile: cameraFile, cameraStart: cameraStart,
+            microphone: microphone, micFile: micFile, micStart: micStart)
+        current = (files, created)
+        phase = .recording(since: created)
+        RecordingPanel.shared.show(model: self)
+    }
+
+    private func restartCameraOnly() {
+        guard let take = cameraOnly else { return }
+        restarting = true
+        Task {
+            defer { restarting = false }
+            phase = .processing("Restarting…")
+            take.microphone?.discard()
+            _ = await camera.finish()
+            for file in [take.cameraFile, take.micFile].compactMap({ $0 }) { try? FileManager.default.removeItem(at: file) }
+            cameraOnly = nil
+            current = nil
+            RecordingPanel.shared.hide()
+            phase = .idle
+            await startCameraOnly()
+            if !isRecording { phase = .idle }
+        }
+    }
+
+    private func finishCameraOnly(_ take: CameraOnlyTake) async {
+        phase = .saving
+        RecordingPanel.shared.hide()
+        let micFile = await take.microphone?.stop()
+        let cameraFinished = await camera.finish()
+        cameraOnly = nil
+        current = nil
+        func cleanUp() {
+            for file in [take.cameraFile, take.micFile].compactMap({ $0 }) { try? FileManager.default.removeItem(at: file) }
+        }
+        let usable = cameraFinished ? true : await Self.hasFootage(take.cameraFile)
+        guard usable else {
+            message = "The camera recording could not be saved. \(camera.problem)"
+            cleanUp()
+            phase = .idle
+            return
+        }
+        phase = .processing("Saving the camera take…")
+        // The microphone began a moment before or after the camera's first picture; line the sound up with it.
+        let delay = take.micStart.map { $0.timeIntervalSince(take.cameraStart) } ?? 0
+        do {
+            try await CameraOnlyMixer.merge(video: take.cameraFile, audio: micFile, audioDelay: delay, to: take.files.video)
+        } catch {
+            message = error.localizedDescription
+            cleanUp()
+            phase = .idle
+            return
+        }
+        cleanUp()
+        try? TakeLibrary.saveCapture(for: take.files, created: take.created, clicks: [], kind: "camera")
+        LibraryModel.shared.refresh()
+        let options = Pipeline.Options(captions: flag(Pref.captions), summary: flag(Pref.summary))
+        let notes = await Pipeline.process(take: take.files, created: take.created, options: options) { [weak self] text in
+            self?.phase = .processing(text)
+        }
+        if !notes.isEmpty { message = notes.joined(separator: "\n") }
+        LibraryModel.shared.select(files: take.files)
+        libraryRequest += 1
+        phase = .idle
+        LibraryModel.shared.refresh()
+    }
+
     /// Tuck the main window away while recording; the control bar stays on top.
     private func minimizeWindows() {
         let visible = NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible && $0.canBecomeMain }
@@ -322,7 +587,10 @@ final class RecorderModel: ObservableObject {
     private var hiddenWindows: [NSWindow] = []
 
     private func stop() async {
+        if let take = cameraOnly { await finishCameraOnly(take); return }
         guard let current else { return }
+        let forAgent = quickAgent || UserDefaults.standard.bool(forKey: Pref.recordForAgent)
+        quickAgent = false
         // Where the time goes after Stop, in the system log (subsystem org.relaytake.mac, category save). It stays on this Mac.
         let saveLog = Logger(subsystem: "org.relaytake.mac", category: "save")
         var mark = Date()
@@ -391,6 +659,10 @@ final class RecorderModel: ObservableObject {
             LibraryModel.shared.select(files: current.files)
             libraryRequest += 1
             lap("captions and summary")
+            if forAgent {
+                await handOffToAgent(current.files)
+                lap("request for an agent")
+            }
         }
         self.current = nil
         phase = .idle
@@ -495,6 +767,15 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
+    /// "  (⌃⌥⌘R)" while the shortcut is on, so the menu says what to press.
+    private static func hint(_ action: HotkeyAction) -> String {
+        guard UserDefaults.standard.object(forKey: Pref.hotkeysEnabled) as? Bool ?? true,
+              GlobalHotkeys.shared.problems[action] == nil
+        else { return "" }
+        let stored = UserDefaults.standard.string(forKey: action.preferenceKey) ?? action.standard.stored
+        return HotkeyBinding(stored: stored).map { "  (\($0.display))" } ?? ""
+    }
+
     private func showLibrary() {
         library.refresh()
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -513,7 +794,18 @@ struct MenuContent: View {
         .disabled(model.isBusy)
         if model.isRecording {
             Button("Restart take", systemImage: "arrow.counterclockwise") { model.restart() }
+        } else {
+            Button("Quick Record" + Self.hint(.startStop), systemImage: "bolt.circle") { model.quickRecord() }
+                .disabled(model.isBusy)
+                .help("Record the screen you used last right away, with your last settings")
+            Button("Quick Take for Agent" + Self.hint(.startAgent), systemImage: "sparkles.rectangle.stack") { model.quickRecordForAgent() }
+                .disabled(model.isBusy)
+                .help("Like Quick Record, and when you stop, copy the recording as a request for a coding agent. Talk through what you want while you show it.")
+            Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
+                .disabled(model.isBusy)
         }
+        Button("Speaker Notes", systemImage: "note.text") { SpeakerNotesWindow.shared.toggle() }
+            .keyboardShortcut("n", modifiers: [.command, .option])
 
         switch model.phase {
         case .saving: Text("Saving…")
@@ -719,6 +1011,34 @@ struct RelaytakeApp: App {
                 exit((try? png?.write(to: URL(fileURLWithPath: args[flag + 1]))) != nil ? 0 : 1)
             }
         }
+        // `Hot Take --welcome-snapshot out.png [seconds]` draws the first-launch welcome at that moment to a PNG.
+        if let flag = args.firstIndex(of: "--welcome-snapshot"), args.count > flag + 1 {
+            let seconds = args.count > flag + 2 ? Double(args[flag + 2]) ?? 3.5 : 3.5
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds).frame(width: 1000, height: 680))
+                host.frame = CGRect(x: 0, y: 0, width: 1000, height: 680)
+                host.layoutSubtreeIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let png = rep.representation(using: .png, properties: [:])
+                exit((try? png?.write(to: URL(fileURLWithPath: args[flag + 1]))) != nil ? 0 : 1)
+            }
+        }
+        // `Hot Take --settings-snapshot out.png` draws the Settings window to a PNG.
+        if let flag = args.firstIndex(of: "--settings-snapshot"), args.count > flag + 1 {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                let host = NSHostingView(rootView: SettingsView().environment(\.colorScheme, .dark))
+                host.frame = CGRect(origin: .zero, size: host.fittingSize)
+                host.appearance = NSAppearance(named: .darkAqua)
+                host.layoutSubtreeIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let png = rep.representation(using: .png, properties: [:])
+                exit((try? png?.write(to: URL(fileURLWithPath: args[flag + 1]))) != nil ? 0 : 1)
+            }
+        }
         // `Hot Take --record-sheet-snapshot out.png` draws the record sheet (Area mode, so no screen contents) to a PNG,
         // with its settings in a scratch defaults suite so the real ones are untouched.
         if let flag = args.firstIndex(of: "--record-sheet-snapshot"), args.count > flag + 1 {
@@ -900,6 +1220,22 @@ struct RelaytakeApp: App {
                 exit(0)
             }
         }
+        // `Hot Take --chapters video.mp4` prints suggested chapters (nothing is saved).
+        if let flag = args.firstIndex(of: "--chapters"), args.indices.contains(flag + 1) {
+            let url = URL(fileURLWithPath: args[flag + 1])
+            Task {
+                let dir = url.deletingLastPathComponent()
+                let name = url.deletingPathExtension().lastPathComponent
+                guard let entry = TakeLibrary.load(directory: dir).first(where: { $0.files.baseName == name }) else {
+                    print("not found in folder")
+                    exit(1)
+                }
+                let result = await ChapterAnalysis.run(for: entry) { print($0) }
+                print(ChapterList.timestampList(result.chapters))
+                result.notes.forEach { print("note:", $0) }
+                exit(0)
+            }
+        }
         if let flag = args.firstIndex(of: "--process"), args.indices.contains(flag + 1) {
             let url = URL(fileURLWithPath: args[flag + 1])
             Task {
@@ -939,6 +1275,6 @@ struct RelaytakeApp: App {
             AboutView()
         }
         .windowResizability(.contentSize)
-        .commands { AboutCommands(); TranscriptFindCommands(); SharedProjectCommands() }
+        .commands { AboutCommands(); TranscriptFindCommands(); SharedProjectCommands(); ImportCommands() }
     }
 }

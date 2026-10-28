@@ -1,6 +1,8 @@
 import AppKit
 import RelaytakeCore
 import SwiftUI
+import Translation
+import UniformTypeIdentifiers
 
 /// The words of a recording next to its video. Click a line to jump there; the line being spoken
 /// is highlighted and followed as the video plays.
@@ -20,18 +22,37 @@ struct TranscriptView: View {
     @FocusState private var editFocused: Bool
     @State private var status: String?
     @State private var problem = ""
+    /// The recording's chapters, shown as headings among the lines.
+    @StateObject private var chapters = ChapterBook()
     /// The line being corrected, and what it says so far. Double-click a line to start; Return or clicking away saves.
     @State private var editingIndex: Int?
     @State private var draft = ""
     @State private var confirmRemake = false
     @State private var savedNote = false
+    /// Translations of this take's transcript by language, and the one on screen (nil is what was said).
+    @State private var translations: [String: [CaptionSegment]] = [:]
+    @State private var shown: String?
+    @State private var targets: [CaptionTranslator.Language] = []
+    @State private var translationConfig: TranslationSession.Configuration?
+    @State private var job: TranslationJob?
+
+    /// What a translation in progress is for, kept so a take opened meanwhile is not written to by mistake.
+    private struct TranslationJob {
+        let take: TakeEntry
+        let language: String
+        let segments: [CaptionSegment]
+    }
+
+    /// The lines on screen: the translation if one is chosen, otherwise the transcript.
+    private var lines: [CaptionSegment] { shown.flatMap { translations[$0] } ?? segments }
+    private var showingTranslation: Bool { shown.flatMap { translations[$0] } != nil }
 
     private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Indices of the lines containing the search text, in order.
     private var matches: [Int] {
         guard findOpen, !term.isEmpty else { return [] }
-        return segments.indices.filter { segments[$0].text.localizedCaseInsensitiveContains(term) }
+        return lines.indices.filter { lines[$0].text.localizedCaseInsensitiveContains(term) }
     }
 
     private var currentMatch: Int? {
@@ -40,7 +61,7 @@ struct TranscriptView: View {
     }
 
     private var activeIndex: Int? {
-        segments.lastIndex { $0.start <= player.time + 0.05 && player.time < $0.end + 0.05 }
+        lines.lastIndex { $0.start <= player.time + 0.05 && player.time < $0.end + 0.05 }
     }
 
     var body: some View {
@@ -50,12 +71,19 @@ struct TranscriptView: View {
                 .background(.black).clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 10) {
                 header
-                if segments.isEmpty { empty } else { list }
+                if segments.isEmpty && chapters.shown.isEmpty { empty } else { list }
             }
             .frame(width: 380, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
         }
         .padding(16)
-        .task(id: take.id) { editingIndex = nil; closeFind(); reload() }
+        .task(id: take.id) {
+            editingIndex = nil; closeFind(); reload()
+            chapters.load(take, library: library, player: player)
+            chapters.findAutomatically { }
+        }
+        .chapterDialogs(chapters)
+        .task { targets = await CaptionTranslator.targets(excluding: SpeechPreferences.locale.language) }
+        .translationTask(translationConfig) { session in await runTranslation(session) }
         .focusedSceneValue(\.transcriptFind, segments.isEmpty ? nil : TranscriptFindActions(
             show: openFind, next: { stepMatch(1) }, previous: { stepMatch(-1) }))
         .confirmationDialog("Remake the transcript?", isPresented: $confirmRemake) {
@@ -68,18 +96,21 @@ struct TranscriptView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Transcript").font(.title3.bold())
                 Spacer()
                 if !segments.isEmpty {
                     Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(segments.map(\.text).joined(separator: "\n"), forType: .string)
-                    }.help("Copy the whole transcript")
+                        NSPasteboard.general.setString(lines.map(\.text).joined(separator: "\n"), forType: .string)
+                    }
+                    .toolbarIcon(showingTranslation ? "Copy the whole translation" : "Copy the whole transcript")
+                    translateMenu
                     Button(role: .none) { confirmRemake = true } label: { Label("Remake", systemImage: "arrow.clockwise") }
                         .disabled(status != nil)
-                        .help("Listen to the recording again on this Mac and replace the transcript")
+                        .toolbarIcon("Remake the transcript: listen to the recording again on this Mac and replace it")
                 }
+                if loaded { ChapterActionsMenu(book: chapters) { if segments.isEmpty { reload() } } }
             }
+            ChapterStatus(book: chapters)
             if savedNote {
                 Label("Saved", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
             }
@@ -150,59 +181,18 @@ struct TranscriptView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(segments.enumerated()), id: \.offset) { item in
-                        let active = activeIndex == item.offset
-                        let found = matches.contains(item.offset)
-                        let current = currentMatch == item.offset
-                        if editingIndex == item.offset {
-                            HStack(alignment: .top, spacing: 10) {
-                                Text(timeLabel(item.element.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).padding(.top, 5)
-                                // Return or the check mark saves, Escape puts the old words back, and clicking away saves.
-                                VStack(alignment: .trailing, spacing: 4) {
-                                    TextField("", text: $draft, axis: .vertical)
-                                        .textFieldStyle(.plain)
-                                        .lineLimit(1...8)
-                                        .focused($editFocused)
-                                        .padding(6)
-                                        .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 1.5))
-                                        .onSubmit { finishEditing(cancelled: false) }
-                                        .onExitCommand { finishEditing(cancelled: true) }
-                                        .onChange(of: editFocused) { _, focused in if !focused { finishEditing(cancelled: false) } }
-                                        .task { editFocused = true }
-                                        .accessibilityLabel("Transcript line at \(timeLabel(item.element.start))")
-                                    Button { finishEditing(cancelled: false) } label: {
-                                        Image(systemName: "checkmark.circle.fill").font(.title2)
-                                    }
-                                    .buttonStyle(.plain).foregroundStyle(.tint)
-                                    .help("Save (Return)")
-                                    .accessibilityLabel("Save correction")
-                                }
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                        } else {
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(timeLabel(item.element.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                Text(item.element.text).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(
-                                current ? Color.yellow.opacity(0.45)
-                                    : found ? Color.yellow.opacity(0.2)
-                                    : active ? Color.accentColor.opacity(0.18) : .clear,
-                                in: RoundedRectangle(cornerRadius: 6))
-                            .contentShape(Rectangle())
-                            // A double-click opens the line for editing. A click moves to the line without starting or stopping playback.
-                            .onTapGesture { player.seek(to: item.element.start) }
-                            .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditing(item.offset) })
-                            .help("Click to jump to this line. Double-click to edit the words.")
-                            .contextMenu {
-                                Button("Edit", systemImage: "pencil") { beginEditing(item.offset) }.disabled(status != nil)
-                            }
-                            .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-                            .accessibilityAction(named: "Edit this line") { beginEditing(item.offset) }
+                    let breaks = chapterBreaks
+                    ForEach(Array(lines.enumerated()), id: \.offset) { item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(breaks.byLine[item.offset] ?? []) { ChapterHeading(chapter: $0, book: chapters, player: player) }
+                            row(item.offset, item.element)
+                                .padding(.leading, item.offset >= breaks.firstLine ? 14 : 0)
                         }
+                    }
+                    ForEach(breaks.after) { ChapterHeading(chapter: $0, book: chapters, player: player) }
+                    if segments.isEmpty, loaded {
+                        Button("Make Transcript") { make() }.disabled(status != nil).padding(.top, 8)
+                            .help("Listens to the recording on this Mac. Nothing leaves your Mac.")
                     }
                 }
             }
@@ -215,13 +205,162 @@ struct TranscriptView: View {
         }
     }
 
+    /// Each chapter sits just above the first line that starts at or after it; any later than every line go at the end.
+    /// `firstLine` is where the first chapter's body begins; lines from there on are indented under their headings.
+    private var chapterBreaks: (byLine: [Int: [Chapter]], after: [Chapter], firstLine: Int) {
+        var byLine: [Int: [Chapter]] = [:]
+        var after: [Chapter] = []
+        for chapter in chapters.shown {
+            if let line = lines.firstIndex(where: { $0.start + 0.05 >= chapter.start }) {
+                byLine[line, default: []].append(chapter)
+            } else { after.append(chapter) }
+        }
+        return (byLine, after, byLine.keys.min() ?? .max)
+    }
+
+    @ViewBuilder
+    private func row(_ index: Int, _ segment: CaptionSegment) -> some View {
+        let active = activeIndex == index
+        let found = matches.contains(index)
+        let current = currentMatch == index
+        if editingIndex == index {
+            HStack(alignment: .top, spacing: 10) {
+                Text(timeLabel(segment.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary).padding(.top, 5)
+                // Return or the check mark saves, Escape puts the old words back, and clicking away saves.
+                VStack(alignment: .trailing, spacing: 4) {
+                    TextField("", text: $draft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...8)
+                        .focused($editFocused)
+                        .padding(6)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 1.5))
+                        .onSubmit { finishEditing(cancelled: false) }
+                        .onExitCommand { finishEditing(cancelled: true) }
+                        .onChange(of: editFocused) { _, focused in if !focused { finishEditing(cancelled: false) } }
+                        .task { editFocused = true }
+                        .accessibilityLabel("Transcript line at \(timeLabel(segment.start))")
+                    Button { finishEditing(cancelled: false) } label: {
+                        Image(systemName: "checkmark.circle.fill").font(.title2)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.tint)
+                    .help("Save (Return)")
+                    .accessibilityLabel("Save correction")
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(timeLabel(segment.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(segment.text).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(
+                current ? Color.yellow.opacity(0.45)
+                    : found ? Color.yellow.opacity(0.2)
+                    : active ? Color.accentColor.opacity(0.18) : .clear,
+                in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+            // A double-click opens the line for editing. A click moves to the line without starting or stopping playback.
+            .onTapGesture { player.seek(to: segment.start) }
+            .simultaneousGesture(TapGesture(count: 2).onEnded { beginEditing(index) })
+            .help("Click to jump to this line. Double-click to edit the words.")
+            .contextMenu {
+                Button("Edit", systemImage: "pencil") { beginEditing(index) }.disabled(status != nil || showingTranslation)
+                Button("Start Chapter Here", systemImage: "text.line.first.and.arrowtriangle.forward") { chapters.add(at: segment.start) }
+            }
+            .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction(named: "Edit this line") { beginEditing(index) }
+        }
+    }
+
     private func reload() {
-        segments = TakeLibrary.metadata(for: take.files)?.transcript ?? []
+        let metadata = TakeLibrary.metadata(for: take.files)
+        segments = metadata?.transcript ?? []
+        translations = metadata?.translations ?? [:]
+        shown = nil
         loaded = true
     }
 
+    // MARK: Translation
+
+    private var translateMenu: some View {
+        Menu {
+            if !translations.isEmpty {
+                Picker("Show", selection: $shown) {
+                    Text("As spoken").tag(String?.none)
+                    ForEach(translations.keys.sorted(), id: \.self) { Text(CaptionTranslator.name(for: $0)).tag(Optional($0)) }
+                }.pickerStyle(.inline)
+                Divider()
+            }
+            Menu("Translate To") {
+                ForEach(targets) { language in
+                    Button(translations[language.id] == nil ? language.name : "\(language.name) (translate again)") {
+                        translate(to: language.id)
+                    }
+                }
+            }
+            if let shown, translations[shown] != nil {
+                Divider()
+                Button("Save \(CaptionTranslator.name(for: shown)) Captions…") { saveCaptions(language: shown) }
+                Button("Remove \(CaptionTranslator.name(for: shown)) Translation", role: .destructive) { removeTranslation(shown) }
+            }
+        } label: { Label("Translate", systemImage: "translate") }
+            .toolbarIcon("Translate the transcript on this Mac")
+            .disabled(status != nil || targets.isEmpty)
+            .help("Translate the transcript on this Mac. Translations can be used as captions in the Studio.")
+    }
+
+    private func translate(to language: String) {
+        guard status == nil, !segments.isEmpty else { return }
+        problem = ""
+        status = "Translating to \(CaptionTranslator.name(for: language))…"
+        job = TranslationJob(take: take, language: language, segments: segments)
+        let next = TranslationSession.Configuration(
+            source: SpeechPreferences.locale.language, target: Locale.Language(identifier: language))
+        // The same pair again does not change the configuration, so it has to be invalidated to run once more.
+        if translationConfig == next { translationConfig?.invalidate() } else { translationConfig = next }
+    }
+
+    /// Runs when the system hands over a session (after any language download the person allowed).
+    private func runTranslation(_ session: TranslationSession) async {
+        guard let job else { return }
+        defer { self.job = nil; status = nil }
+        let name = CaptionTranslator.name(for: job.language)
+        do {
+            let result = try await CaptionTranslator.translate(job.segments, with: session) { done, total in
+                Task { @MainActor in status = "Translating to \(name): \(done) of \(total)…" }
+            }
+            try TakeLibrary.update(job.take) { $0.translations[job.language] = result }
+            library.refresh()
+            guard job.take.id == take.id else { return }
+            translations[job.language] = result
+            shown = job.language
+        } catch { problem = "Could not translate to \(name): \(error.localizedDescription)" }
+    }
+
+    private func removeTranslation(_ language: String) {
+        do {
+            try TakeLibrary.update(take) { $0.translations[language] = nil }
+            translations[language] = nil
+            shown = nil
+            library.refresh()
+        } catch { problem = "Could not remove the translation: \(error.localizedDescription)" }
+    }
+
+    private func saveCaptions(language: String) {
+        guard let cues = translations[language] else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = CaptionTranslation.captionFileName(baseName: take.files.baseName, language: language)
+        panel.allowedContentTypes = [UTType(filenameExtension: "vtt") ?? .plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try Captions.webVTT(cues).write(to: url, atomically: true, encoding: .utf8) }
+        catch { problem = "Could not save the captions: \(error.localizedDescription)" }
+    }
+
     private func beginEditing(_ index: Int) {
-        guard segments.indices.contains(index), status == nil else { return }
+        guard segments.indices.contains(index), status == nil, !showingTranslation else { return }
         player.player.pause()  // so the words stay put while you type
         draft = segments[index].text
         savedNote = false
@@ -242,6 +381,9 @@ struct TranscriptView: View {
         do {
             try TakeLibrary.saveTranscript(updated, for: take)
             segments = updated
+            // The saved translations were made from the old words and are dropped with them.
+            translations = [:]
+            shown = nil
             savedNote = true
             library.refresh()
             Task { try? await Task.sleep(for: .seconds(2)); savedNote = false }
@@ -256,10 +398,13 @@ struct TranscriptView: View {
             defer { status = nil }
             do {
                 // Remaking replaces what is there; the first time simply makes it.
-                if !segments.isEmpty { try? TakeLibrary.update(take) { $0.transcript = [] } }
+                if !segments.isEmpty { try? TakeLibrary.update(take) { $0.transcript = []; $0.translations = [:] } }
+                translations = [:]
+                shown = nil
                 segments = try await Transcripts.ensure(for: take) { status = $0 }
                 if segments.isEmpty { problem = "No speech was found in this recording." }
                 library.refresh()
+                chapters.findAutomatically { }
             } catch { problem = "Could not make the transcript: \(error.localizedDescription)" }
         }
     }

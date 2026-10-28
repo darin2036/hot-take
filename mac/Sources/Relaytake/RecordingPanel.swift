@@ -83,13 +83,15 @@ private struct RecordingBar: View {
                 if model.paused {
                     Text("Paused").font(.callout).foregroundStyle(.secondary)
                 }
-                Button {
-                    model.paused ? model.resume() : model.pause()
-                } label: {
-                    Label(model.paused ? "Resume" : "Pause", systemImage: model.paused ? "play.fill" : "pause.fill")
+                if model.canPause {
+                    Button {
+                        model.paused ? model.resume() : model.pause()
+                    } label: {
+                        Label(model.paused ? "Resume" : "Pause", systemImage: model.paused ? "play.fill" : "pause.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.paused ? "Carry on with this take" : "Pause. Paused time is left out of the take.")
                 }
-                .buttonStyle(.plain)
-                .help(model.paused ? "Carry on with this take" : "Pause. Paused time is left out of the take.")
 
                 Button {
                     model.restart()

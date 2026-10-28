@@ -20,7 +20,23 @@ enum Pref {
     /// "small" or "large" (the default): how big the presenter circle is.
     static let presenterSize = "presenterSize"
     static let captions = "captions"
+    /// Find chapters in a recording's transcript automatically and show them. On by default; each recording can override it.
+    static let chapters = "chapters"
+    static var chaptersByDefault: Bool { UserDefaults.standard.object(forKey: chapters) as? Bool ?? true }
     static let summary = "summary"
+    /// Leave Notification Center out of screen and area recordings, so banners are not in the video.
+    static let hideNotifications = "hideNotifications"
+    /// Master switch for the global shortcuts.
+    static let hotkeysEnabled = "hotkeysEnabled"
+    /// The display recorded last, which Quick Record and screenshots use again.
+    static let lastDisplay = "lastRecordedDisplay"
+    static let speakerNotes = "speakerNotes"
+    static let speakerNotesSize = "speakerNotesSize"
+    static let playbackSpeed = "playbackSpeed"
+    /// Play the rainbow welcome each time the app launches. On by default.
+    static let showWelcome = "showWelcome"
+    /// When a recording stops, turn it into a request for a coding agent and copy it. Off by default.
+    static let recordForAgent = "recordForAgent"
 }
 
 /// Everything configurable lives here, not in the menu-bar dropdown. Panes follow the system's own
@@ -62,6 +78,8 @@ private struct RecordingPane: View {
     @AppStorage(Pref.quality) private var quality = "medium"
     @AppStorage(Pref.microphone) private var microphone = true
     @AppStorage(Pref.systemAudio) private var systemAudio = true
+    @AppStorage(Pref.microphoneDevice) private var microphoneID = ""
+    @State private var microphones = Microphone.available()
 
     var body: some View {
         Form {
@@ -74,12 +92,25 @@ private struct RecordingPane: View {
             Section {
                 Toggle("Record microphone", isOn: $microphone)
                     .help("Record your voice from the microphone.")
+                if microphone {
+                    Picker("Microphone", selection: Binding(
+                        get: { microphones.contains { $0.id == microphoneID } ? microphoneID : "" },
+                        set: { microphoneID = $0 })) {
+                        ForEach(microphones) { Text($0.name).tag($0.id) }
+                    }
+                    .help("Which microphone to record. \"Default\" follows the Mac's current input.")
+                    MicrophoneModeRow(owner: "settings", deviceID: microphoneID)
+                }
                 Toggle("Record system audio", isOn: $systemAudio)
                     .help("Record the sound your Mac plays. Your voice uses the microphone setting.")
             } header: {
                 Text("Audio")
             }
+
+            ShortcutsSection()
         }
+        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
+        .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in microphones = Microphone.available() }
         .settingsPane()
     }
 }
@@ -87,6 +118,7 @@ private struct RecordingPane: View {
 private struct ProcessingPane: View {
     @AppStorage(Pref.captions) private var captions = true
     @AppStorage(Pref.summary) private var summary = true
+    @AppStorage(Pref.chapters) private var chapters = true
     @AppStorage(SpeechPreferences.engineKey) private var engineChoice = AppleSpeechEngine.speechTranscriber.rawValue
     @AppStorage(SpeechPreferences.localeKey) private var localeChoice = ""
     @State private var locales: [Locale] = []
@@ -101,6 +133,8 @@ private struct ProcessingPane: View {
                     .help("Create a .vtt caption file on this Mac. Nothing is uploaded.")
                 Toggle("Write a title and summary", isOn: $summary)
                     .help("Generate a title and summary on this Mac. Nothing is uploaded.")
+                Toggle("Find chapters in transcripts", isOn: $chapters)
+                    .help("Split a longer recording's transcript into titled parts, on this Mac. Nothing is uploaded. Each recording can turn chapters on or off from its transcript, and this is only the starting point.")
             } header: {
                 Text("After recording")
             } footer: {
@@ -213,6 +247,7 @@ private struct PermissionsPane: View {
 
 private struct LibraryPane: View {
     private let folder = TakeFiles.defaultDirectory()
+    @AppStorage(Pref.showWelcome) private var showWelcome = true
 
     var body: some View {
         Form {
@@ -230,6 +265,12 @@ private struct LibraryPane: View {
                 .help("Recordings, captions and notes are ordinary files. Folders in Hot Take are also available in the file manager.")
             } header: {
                 Text("Saved recordings")
+            }
+            Section {
+                Toggle("Show the welcome animation", isOn: $showWelcome)
+                    .help("The rainbow “What’s your Hot Take?” screen that plays each time Hot Take opens.")
+            } header: {
+                Text("At launch")
             }
         }
         .settingsPane()

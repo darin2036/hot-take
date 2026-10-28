@@ -256,6 +256,10 @@ public struct StudioProject: Equatable, Sendable {
     /// into the picture when it is previewed or saved.
     public var zooms: [ZoomSegment] = []
     public var background: WindowBackground?
+    /// Arrows, boxes and blurred regions on the recorded picture, and rings at the recorded clicks (see
+    /// `StudioAnnotations.swift`). Drawn into the picture, under the text, and zoomed with it.
+    public var shapes: [ShapeOverlay] = []
+    public var clickHighlight: ClickHighlight?
     public var clips: [AudioClip] = []
     /// Volume of the recording's own sound. 0 mutes it (for a full redub).
     public var originalVolume: Double = 1
@@ -363,6 +367,12 @@ public struct StudioProject: Equatable, Sendable {
             if zoom.end > position { zoom.end += length }
             return zoom
         }
+        shapes = shapes.map { shape in
+            var shape = shape
+            if shape.start >= position { shape.start += length }
+            if shape.end > position { shape.end += length }
+            return shape
+        }
         clips = clips.map { clip in
             var clip = clip
             if !clip.fitsVideo, clip.start >= position { clip.start += length }
@@ -387,6 +397,12 @@ public struct StudioProject: Equatable, Sendable {
             zoom.start = map(zoom.start)
             zoom.end = map(zoom.end)
             return zoom.length >= ZoomSegment.minimumLength ? zoom : nil
+        }
+        shapes = shapes.compactMap { shape in
+            var shape = shape
+            shape.start = map(shape.start)
+            shape.end = map(shape.end)
+            return shape.length >= ShapeOverlay.minimumLength ? shape : nil
         }
         var rebuilt: [AudioClip] = []
         for clip in clips {

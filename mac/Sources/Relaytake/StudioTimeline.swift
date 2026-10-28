@@ -10,16 +10,60 @@ private enum Metrics {
     static let row: CGFloat = 34
     static let gap: CGFloat = 4
     static let pad: CGFloat = 10
-    static let rows = 6
-    static var height: CGFloat { ruler + CGFloat(rows) * (row + gap) + 12 }
+    static func height(rows: Int) -> CGFloat { ruler + CGFloat(rows) * (row + gap) + 12 }
 }
 
-/// Five tracks, always fitted to the window's width so there is nothing to scroll sideways:
-/// the picture (with cuts), text, the recording's own sound, music, and voiceover.
+private enum Track: CaseIterable {
+    case video, text, zoom, marks, audio, music, voiceover
+
+    var symbol: String {
+        switch self {
+        case .video: "film"
+        case .text: "textformat"
+        case .zoom: "plus.magnifyingglass"
+        case .marks: "pencil.tip.crop.circle"
+        case .audio: "waveform"
+        case .music: "music.note"
+        case .voiceover: "mic"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .video: "Video"
+        case .text: "Text"
+        case .zoom: "Zoom"
+        case .marks: "Marks"
+        case .audio: "Audio"
+        case .music: "Music"
+        case .voiceover: "Voiceover"
+        }
+    }
+}
+
+/// Tracks fitted to the window's width so there is nothing to scroll sideways: the picture (with cuts) and the
+/// recording's own sound are always there; text, zoom, marks, music and voiceover appear once they have something
+/// on them, so the preview gets the room an empty track would have taken.
 struct StudioTimeline: View {
     @ObservedObject var model: StudioModel
 
+    private var tracks: [Track] {
+        let project = model.project
+        return Track.allCases.filter { track in
+            switch track {
+            case .video, .audio: true
+            case .text: !project.texts.isEmpty
+            case .zoom: !project.zooms.isEmpty
+            case .marks: !project.shapes.isEmpty || project.clickHighlight != nil
+            case .music: project.clips.contains { $0.kind == .music }
+            case .voiceover: project.clips.contains { $0.kind == .voiceover }
+            }
+        }
+    }
+
     var body: some View {
+        let tracks = tracks
+        let height = Metrics.height(rows: tracks.count)
         GeometryReader { geometry in
             let width = max(60, geometry.size.width - Metrics.label - Metrics.pad * 2 - 8)
             let total = max(model.project.outputDuration, 0.1)
@@ -27,36 +71,36 @@ struct StudioTimeline: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: Metrics.gap) {
                     Color.clear.frame(height: Metrics.ruler)
-                    TrackLabel(symbol: "film", title: "Video")
-                    TrackLabel(symbol: "textformat", title: "Text")
-                    TrackLabel(symbol: "plus.magnifyingglass", title: "Zoom")
-                    TrackLabel(symbol: "waveform", title: "Audio")
-                    TrackLabel(symbol: "music.note", title: "Music")
-                    TrackLabel(symbol: "mic", title: "Voiceover")
+                    ForEach(tracks, id: \.self) { TrackLabel(symbol: $0.symbol, title: $0.title) }
                 }
                 .frame(width: Metrics.label, alignment: .leading)
 
                 ZStack(alignment: .topLeading) {
                     VStack(spacing: Metrics.gap) {
                         Ruler(model: model, width: width, total: total)
-                        VideoTrack(model: model, width: width, total: total)
-                            .overlay(alignment: .topLeading) { TightenMarks(model: model, pps: pps) }
-                        TextTrack(model: model, pps: pps)
-                        ZoomTrack(model: model, pps: pps)
-                        OriginalTrack(model: model, pps: pps, total: total)
-                        AudioClipTrack(model: model, kind: .music, pps: pps,
-                                       hint: "Drop an audio file here, or choose Add Music")
-                        AudioClipTrack(model: model, kind: .voiceover, pps: pps,
-                                       hint: "Choose Voiceover to talk over the video")
+                        ForEach(tracks, id: \.self) { track in
+                            switch track {
+                            case .video:
+                                VideoTrack(model: model, width: width, total: total)
+                                    .overlay(alignment: .topLeading) { TightenMarks(model: model, pps: pps) }
+                            case .text: TextTrack(model: model, pps: pps)
+                            case .zoom: ZoomTrack(model: model, pps: pps)
+                            case .marks: MarksTrack(model: model, pps: pps)
+                            case .audio: OriginalTrack(model: model, pps: pps, total: total)
+                            case .music: AudioClipTrack(model: model, kind: .music, pps: pps)
+                            case .voiceover: AudioClipTrack(model: model, kind: .voiceover, pps: pps)
+                            }
+                        }
                     }
-                    Playhead(clock: model.clock, pps: pps, width: width)
+                    Playhead(clock: model.clock, pps: pps, width: width, height: height)
                 }
                 .frame(width: width)
             }
             .padding(.horizontal, Metrics.pad)
             .padding(.top, 4)
         }
-        .frame(height: Metrics.height)
+        .frame(height: height)
+        .animation(.easeOut(duration: 0.15), value: tracks)
         // Drop a song straight onto the timeline.
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: { isAudio($0) }) else { return false }
@@ -86,6 +130,7 @@ private struct Playhead: View {
     @ObservedObject var clock: StudioClock
     let pps: CGFloat
     let width: CGFloat
+    let height: CGFloat
 
     var body: some View {
         let x = min(width, max(0, clock.time * pps))
@@ -93,13 +138,38 @@ private struct Playhead: View {
             Image(systemName: "arrowtriangle.down.fill").font(.system(size: 9)).foregroundStyle(.red)
             Rectangle().fill(.red).frame(width: 1.5)
         }
-        .frame(width: 12, height: Metrics.height - 8)
+        .frame(width: 12, height: height - 8)
         .offset(x: x - 6)
         .allowsHitTesting(false)
     }
 }
 
 // MARK: Ruler
+
+/// Where a chapter begins, on the ruler. Click to go there; hover for its name. Chapters are renamed and added in the
+/// transcript, so this only shows them.
+private struct ChapterFlag: View {
+    let chapter: Chapter
+    let x: CGFloat
+    let model: StudioModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(systemName: "diamond.fill").font(.system(size: 8))
+            Rectangle().frame(width: 1.5)
+        }
+        .foregroundStyle(Color.accentColor)
+        .frame(width: 14, height: Metrics.ruler)
+        .contentShape(Rectangle())
+        .onTapGesture { model.seek(to: chapter.start) }
+        .offset(x: x - 7)
+        .help("\(ChapterList.timestamp(chapter.start))  \(chapter.title.isEmpty ? "Untitled chapter" : chapter.title)")
+        .accessibilityElement()
+        .accessibilityLabel("Chapter: \(chapter.title)")
+        .accessibilityValue(ChapterList.timestamp(chapter.start))
+        .accessibilityAddTraits(.isButton)
+    }
+}
 
 private struct Ruler: View {
     @ObservedObject var model: StudioModel
@@ -122,6 +192,9 @@ private struct Ruler: View {
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0).onChanged { value in model.seek(to: Double(value.location.x) / Double(pps)) })
         .pointerStyle(.columnResize)
+        .overlay(alignment: .topLeading) {
+            ForEach(model.chapterMarkers) { chapter in ChapterFlag(chapter: chapter, x: min(width, chapter.start * pps), model: model) }
+        }
     }
 
     private func shortTime(_ seconds: Double) -> String {
@@ -278,7 +351,9 @@ private struct VideoTrack: View {
         .contextMenu {
             // Right-click works on whatever is under the pointer.
             let time = clamp((hoverX ?? 0) / pps)
-            Button("Splice Here", systemImage: "scissors") { model.seek(to: time); model.splice() }
+            Button("Splice All Tracks Here", systemImage: "scissors") { model.seek(to: time); model.splice(.all) }
+            Button("Splice Video Only Here", systemImage: "film") { model.seek(to: time); model.splice(.video) }
+            Button("Splice Audio Only Here", systemImage: "waveform") { model.seek(to: time); model.splice(.audio) }
             if let index = model.project.cuts.partIndex(atOutput: time) {
                 Button("Remove This Part", systemImage: "trash") {
                     model.removeSection(model.project.cuts.partSpans[index])
@@ -353,10 +428,6 @@ private struct TextTrack: View {
         let laneHeight = (Metrics.row - 3) / 2
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12))
-            if model.project.texts.isEmpty {
-                Text("Choose Add Text to put words on the video").font(.caption).foregroundStyle(.tertiary).padding(.leading, 8)
-                    .frame(height: Metrics.row)
-            }
             ForEach(model.project.texts) { text in
                 let lane = min(lanes[text.id] ?? 0, 1)
                 TimelineBlock(
@@ -398,10 +469,6 @@ private struct ZoomTrack: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12))
-            if model.project.zooms.isEmpty {
-                Text(model.clicks.isEmpty ? "Choose Auto Zoom to add a zoom" : "Choose Auto Zoom to zoom in on your clicks")
-                    .font(.caption).foregroundStyle(.tertiary).padding(.leading, 8).frame(height: Metrics.row)
-            }
             ForEach(model.project.zooms) { zoom in
                 TimelineBlock(
                     start: zoom.start, end: zoom.end, pps: pps, height: Metrics.row - 4, yOffset: 2,
@@ -420,12 +487,53 @@ private struct ZoomTrack: View {
     }
 }
 
+// MARK: Marks track
+
+/// Arrows, boxes and blurs on the picture, and (when click rings are on) a dot at each click.
+private struct MarksTrack: View {
+    @ObservedObject var model: StudioModel
+    let pps: CGFloat
+
+    var body: some View {
+        let lanes = model.project.shapeLanes()
+        let laneHeight = (Metrics.row - 8) / 2
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12))
+            if let highlight = model.project.clickHighlight {
+                ForEach(Array(ClickHighlightTimeline(highlight: highlight, cuts: model.project.cuts).moments.enumerated()), id: \.offset) { _, moment in
+                    Circle().fill(highlight.color.color).frame(width: 5, height: 5)
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1))
+                        .offset(x: moment.time * pps - 3, y: Metrics.row - 7)
+                        .allowsHitTesting(false)
+                }
+            }
+            ForEach(model.project.shapes) { shape in
+                TimelineBlock(
+                    start: shape.start, end: shape.end, pps: pps, height: laneHeight, yOffset: 1.5 + CGFloat(min(lanes[shape.id] ?? 0, 1)) * (laneHeight + 1),
+                    selected: model.selection == .shape(shape.id), tint: shape.color.color,
+                    onSelect: { model.select(.shape(shape.id)) },
+                    onBegin: { model.beginGestureIfNeeded() },
+                    onMove: { newStart in model.live { $0.moveShape(shape.id, to: newStart) } },
+                    onResize: { start, end in model.live { $0.updateShape(shape.id) { $0.start = start; $0.end = end } } },
+                    onEnd: { model.endGesture() }
+                ) {
+                    Label(shape.kind.title, systemImage: shape.kind.symbol)
+                        .labelStyle(.titleAndIcon).font(.system(size: 9, weight: .semibold)).lineLimit(1).padding(.horizontal, 6)
+                        .foregroundStyle(.white).shadow(color: .black.opacity(0.5), radius: 1)
+                }
+            }
+        }
+        .frame(height: Metrics.row)
+    }
+}
+
 // MARK: Original audio
 
 private struct OriginalTrack: View {
     @ObservedObject var model: StudioModel
     let pps: CGFloat
     let total: Double
+    @State private var hoverX: CGFloat?
 
     var body: some View {
         let selected = model.selection == .original
@@ -473,6 +581,27 @@ private struct OriginalTrack: View {
         .frame(height: Metrics.row)
         .contentShape(Rectangle())
         .onTapGesture { model.selection = .original }
+        .onContinuousHover { phase in
+            if case .active(let point) = phase { hoverX = point.x } else { hoverX = nil }
+        }
+        .contextMenu {
+            let time = min(max(0, (hoverX ?? 0) / pps), total)
+            Button("Splice Audio Only Here", systemImage: "waveform") { model.seek(to: time); model.splice(.audio) }
+            Button("Splice All Tracks Here", systemImage: "scissors") { model.seek(to: time); model.splice(.all) }
+            let parts = model.project.originalAudioParts
+            if !model.project.originalAudioFollowsVideo, let index = parts.firstIndex(where: { time >= $0.start && time < $0.end }) {
+                if model.project.isOriginalAudioSplice(afterPart: index - 1) {
+                    Button("Remove Audio Splice Before", systemImage: "arrow.left.and.right.square") { model.removeAudioSplice(afterPart: index - 1) }
+                }
+                if model.project.isOriginalAudioSplice(afterPart: index) {
+                    Button("Remove Audio Splice After", systemImage: "arrow.left.and.right.square") { model.removeAudioSplice(afterPart: index) }
+                }
+                Button("Remove This Part of the Audio", systemImage: "trash") { model.selection = .audioPart(parts[index].id); model.deleteSelection() }
+            }
+            if !model.project.originalAudioFollowsVideo {
+                Button("Make Audio Follow the Video", systemImage: "link") { model.relinkOriginalAudio() }
+            }
+        }
     }
 }
 
@@ -482,16 +611,12 @@ private struct AudioClipTrack: View {
     @ObservedObject var model: StudioModel
     let kind: AudioClip.Kind
     let pps: CGFloat
-    let hint: String
 
     var body: some View {
         let clips = model.project.clips.filter { $0.kind == kind }
         let total = model.project.outputDuration
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12))
-            if clips.isEmpty {
-                Text(hint).font(.caption).foregroundStyle(.tertiary).padding(.leading, 8).frame(height: Metrics.row)
-            }
             ForEach(clips) { clip in
                 let playing = clip.effectiveLength(outputDuration: total)
                 TimelineBlock(

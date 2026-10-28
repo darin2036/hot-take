@@ -15,6 +15,8 @@ struct LibraryView: View {
     @State private var window: NSWindow?
     /// Set while the pinned state is being restored at launch, so that does not resize the window.
     @State private var restoring = true
+    /// The rainbow welcome over the whole window, once each time the app launches, unless turned off in Settings.
+    @State private var showingWelcome = !WelcomeLaunch.played && (UserDefaults.standard.object(forKey: Pref.showWelcome) as? Bool ?? true)
 
     /// Width the pinned folder list takes (its default column width).
     private static let sidebarWidth: CGFloat = 220
@@ -92,6 +94,14 @@ struct LibraryView: View {
             .frame(minWidth: contentMinimum.width, minHeight: contentMinimum.height)
         }
         .background(WindowReader { if window !== $0 { window = $0 } })
+        .toolbarVisibility(showingWelcome ? .hidden : .automatic, for: .windowToolbar)
+        .overlay {
+            if showingWelcome {
+                WelcomeView { showingWelcome = false }
+                    .onAppear { WelcomeLaunch.played = true }
+                    .transition(.identity)
+            }
+        }
         .background(TrashKeyHandler(
             enabled: !targets.isEmpty && library.prompt == nil && !library.confirmBulkTrash
                 && !library.confirmDetailTrash && !recorder.choosing && !recorder.isBusy,
@@ -124,6 +134,11 @@ struct LibraryView: View {
             }
             // Actions for whatever is selected (or open): they appear only when there is something to act on.
             ToolbarItemGroup(placement: .primaryAction) {
+                if library.selected == nil && targets.count >= 2 {
+                    Button { recorder.join(targets) } label: { Label("Join", systemImage: "rectangle.stack.badge.plus") }
+                        .labelStyle(.titleAndIcon)
+                        .help("Join these \(targets.count) recordings into a new one, in the order they were recorded. The originals stay.")
+                }
                 if library.selected == nil && !targets.isEmpty {
                     Button { askToTrash() } label: { Label("Trash", systemImage: "trash") }
                         .labelStyle(.titleAndIcon)
@@ -213,6 +228,13 @@ private struct LibraryBrowser: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .contextMenu { BackgroundMenu(library: library, recorder: recorder) }
+        // Drop videos from the Finder to add them to the library.
+        .dropDestination(for: URL.self) { urls, _ in
+            let videos = urls.filter { VideoImporter.fileExtensions.contains($0.pathExtension.lowercased()) }
+            guard !videos.isEmpty else { return false }
+            recorder.importVideos(videos)
+            return true
+        }
         .navigationTitle(library.scopeTitle)
         .navigationSubtitle("\(library.matchingCount) recording\(library.matchingCount == 1 ? "" : "s")")
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search recordings")
@@ -417,6 +439,9 @@ private struct TakeActions: View {
     var body: some View {
         if library.checked.contains(take.id), library.checked.count > 1 {
             Text("\(library.checked.count) recordings selected")
+            Button("Join \(library.checked.count) Recordings", systemImage: "rectangle.stack.badge.plus") {
+                RecorderModel.current?.join(library.takes.filter { library.checked.contains($0.id) })
+            }
             Menu("Move to", systemImage: "folder") {
                 MoveToMenu(library: library, current: nil) { library.moveChecked(to: $0) }
             }
@@ -455,6 +480,7 @@ private struct BackgroundMenu: View {
         Button("New Folder…", systemImage: "folder.badge.plus") {
             library.ask(.newFolder(parent: library.currentFolderPath))
         }
+        Button("Import Video…", systemImage: "square.and.arrow.down") { library.chooseAndImportVideos() }
         Divider()
         Button("Select All", systemImage: "checkmark.circle") { library.checkAllVisible() }
             .keyboardShortcut("a", modifiers: .command)
@@ -545,10 +571,11 @@ private struct TakeCard: View {
                 .opacity(selected ? 1 : 0))
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .onHover { hovering = $0 }
-        .task(id: take.id) {
+        .task(id: "\(take.id) \(take.thumbnailTime ?? -1)") {
             image = await library.thumbnail(for: take)
             _ = await library.duration(of: take)
         }
+        .onDisappear { image = nil }
     }
 }
 
@@ -594,10 +621,11 @@ private struct TakeRow: View {
             }
         }
         .padding(.vertical, 2)
-        .task(id: take.id) {
+        .task(id: "\(take.id) \(take.thumbnailTime ?? -1)") {
             image = await library.thumbnail(for: take)
             _ = await library.duration(of: take)
         }
+        .onDisappear { image = nil }
     }
 
     private var subtitle: String {
@@ -650,7 +678,8 @@ struct TakeDetailView: View {
                         // The video and summary give way when the info panel slides in beside them.
                         VStack(spacing: 12) {
                             PlayerView(player: player.player, fileURL: take.files.video)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                // Tall enough that the pop-out buttons (top corner) clear the player's own bar (bottom).
+                                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                                 .background(.black).clipped().layoutPriority(-1)
                                 .playbackControls(title: take.title, owner: player, library: library) {
                                     AnyView(PlayerView(player: player.player, fileURL: take.files.video))
@@ -677,10 +706,14 @@ struct TakeDetailView: View {
         .onDisappear {
             PlayerWindows.shared.closeAll(ownedBy: player)
             library.theater = nil
+            player.unload()
         }
         .onChange(of: take.title) { _, new in title = new }
-        .onChange(of: tab) { _, new in
-            if new == .studio { player.player.pause() }  // the Studio plays its own edited copy
+        .onChange(of: tab) { old, new in
+            // The Studio plays its own edited copy, so the original's video is let go while it is open
+            // and loaded again when the user comes back.
+            if new == .studio { player.unload() }
+            else if old == .studio { Task { await player.load(take.files.video) } }
         }
         .confirmationDialog("Move this recording to the Trash?", isPresented: $library.confirmDetailTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {
@@ -700,6 +733,10 @@ struct TakeDetailView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         let actions = HStack {
+            ChapterMenu(chapters: metadata?.chapters ?? [], player: player)
+            SpeedMenu(player: player)
+            TakePicturesMenu(take: take, library: library, player: player)
+            CopyForAgentButton(take: take)
             Button { showInfo.toggle() } label: {
                 Label("Info", systemImage: "sidebar.right").symbolVariant(showInfo ? .fill : .none)
             }
@@ -827,6 +864,20 @@ private struct StatusBanner: View {
                 try? await Task.sleep(for: .seconds(12))
                 if recorder.message == message { recorder.message = "" }
             }
+        } else if !recorder.notice.isEmpty {
+            let notice = recorder.notice
+            capsule {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text(notice).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                if let file = recorder.noticeFile {
+                    Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.buttonStyle(.link)
+                }
+                Button("Dismiss") { recorder.clearNotice() }.buttonStyle(.link)
+            }
+            .task(id: notice) {
+                try? await Task.sleep(for: .seconds(10))
+                if recorder.notice == notice { recorder.clearNotice() }
+            }
         }
     }
 
@@ -888,7 +939,7 @@ struct PlayerView: NSViewRepresentable {
 
 
 /// Hands back the window a view is in, so the library can resize it.
-private struct WindowReader: NSViewRepresentable {
+struct WindowReader: NSViewRepresentable {
     let onChange: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView {
