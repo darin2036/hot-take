@@ -11,6 +11,7 @@ enum Pref {
     static let systemAudio = "systemAudio"
     /// Record with no sound at all: neither the microphone nor the computer's audio.
     static let noAudio = "noAudio"
+    static let recordingSounds = "recordingSounds"
     /// Unique ID of the chosen microphone; empty follows the system's default input.
     /// Leave Hot Take's own windows in a screen or area recording (to demo the app itself).
     static let includeOwnWindows = "includeOwnWindows"
@@ -78,6 +79,7 @@ private struct RecordingPane: View {
     @AppStorage(Pref.quality) private var quality = "medium"
     @AppStorage(Pref.microphone) private var microphone = true
     @AppStorage(Pref.systemAudio) private var systemAudio = true
+    @AppStorage(Pref.recordingSounds) private var recordingSounds = true
     @AppStorage(Pref.microphoneDevice) private var microphoneID = ""
     @State private var microphones = Microphone.available()
 
@@ -105,6 +107,11 @@ private struct RecordingPane: View {
                     .help("Record the sound your Mac plays. Your voice uses the microphone setting.")
             } header: {
                 Text("Audio")
+            }
+
+            Section {
+                Toggle("Play recording sounds", isOn: $recordingSounds)
+                    .help("Play tones during the countdown and a chime when capture ends. Uses your Mac’s output volume, even with No audio selected.")
             }
 
             ShortcutsSection()

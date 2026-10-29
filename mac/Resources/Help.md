@@ -48,6 +48,12 @@ macOS asks for **Screen Recording** permission (and Microphone or Camera if you 
 - **Show Hot Take in the recording:** Hot Take's own windows are normally kept out of screen and area recordings. Tick this when you are demoing Hot Take itself.
 - **For an agent:** see *Record for a coding agent*.
 
+### Recording sounds
+
+The 3–2–1 countdown plays a short tone with each number, with a higher tone on 1. A descending chime plays when capture ends; saving and captions may still be in progress. Canceling the countdown silences it. Pause, Resume and Rewind do not play the end chime. Restart plays a fresh countdown.
+
+Sounds are on by default. Turn off **Play recording sounds** in Settings ▸ Recording for a quiet countdown and stop. They use your Mac’s current audio output and volume, including when **No audio** is selected (that option controls the take’s audio). Countdown tones play before capture begins, and the end chime is triggered after capture stops.
+
 ### While recording
 
 - The small control bar shows the timer with **Pause**, **Rewind**, **Restart** and **Stop**. Drag it anywhere it is out of your way; it remembers where you left it.

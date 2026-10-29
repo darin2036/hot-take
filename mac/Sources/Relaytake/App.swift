@@ -616,6 +616,7 @@ final class RecorderModel: ObservableObject {
         RecordingPanel.shared.hide()
         let micFile = await take.microphone?.stop()
         let cameraFinished = await camera.finish()
+        RecordingSounds.shared.play(.ended)
         cameraOnly = nil
         current = nil
         func cleanUp() {
@@ -694,6 +695,7 @@ final class RecorderModel: ObservableObject {
         lap("screen recording closed")
         let placement = SelfViewPanel.shared.placement() ?? pausedPlacement
         if !wasPaused, takeOptions?.useCamera == true { cameraFinishedCleanly = await camera.finish() }
+        RecordingSounds.shared.play(.ended)
         SelfViewPanel.shared.hide()
         var cameraRecorded = cameraOffset != nil && cameraFinishedCleanly
         if cameraOffset != nil, !cameraRecorded {
