@@ -1011,12 +1011,12 @@ struct RelaytakeApp: App {
                 exit((try? png?.write(to: URL(fileURLWithPath: args[flag + 1]))) != nil ? 0 : 1)
             }
         }
-        // `Hot Take --welcome-snapshot out.png [seconds]` draws the first-launch welcome at that moment to a PNG.
+        // `Hot Take --welcome-snapshot out.png [seconds] [--reduce-motion]` draws the first-launch welcome at that moment to a PNG.
         if let flag = args.firstIndex(of: "--welcome-snapshot"), args.count > flag + 1 {
             let seconds = args.count > flag + 2 ? Double(args[flag + 2]) ?? 3.5 : 3.5
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
-                let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds).frame(width: 1000, height: 680))
+                let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds, animated: !args.contains("--reduce-motion")).frame(width: 1000, height: 680))
                 host.frame = CGRect(x: 0, y: 0, width: 1000, height: 680)
                 host.layoutSubtreeIfNeeded()
                 guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
@@ -1095,7 +1095,7 @@ struct RelaytakeApp: App {
                 let files = ((try? FileManager.default.subpathsOfDirectory(atPath: dir.path)) ?? []).sorted()
                 for name in files where !name.hasSuffix("report.txt") {
                     let size = (try? dir.appendingPathComponent(name).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    note("file \(name): \(size ?? 0) bytes")
+                    note("file \(name): \(size) bytes")
                 }
                 if let json = files.first(where: { $0.hasSuffix(".json") }), let text = try? String(contentsOf: dir.appendingPathComponent(json), encoding: .utf8) {
                     for key in ["cameraOffset", "cameraPlacement"] where text.contains(key) { note("metadata has \(key)") }
@@ -1143,7 +1143,7 @@ struct RelaytakeApp: App {
                     let seconds = (try? await asset.load(.duration).seconds) ?? -1
                     let tracks = (try? await asset.loadTracks(withMediaType: .video).count) ?? -1
                     let size = (try? out.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-                    note("file: \(size ?? -1) bytes, \(seconds) s, video tracks \(tracks)")
+                    note("file: \(size) bytes, \(seconds) s, video tracks \(tracks)")
                 }
                 try? report.write(to: URL(fileURLWithPath: out.path + ".txt"), atomically: true, encoding: .utf8)
                 exit(0)
@@ -1275,6 +1275,14 @@ struct RelaytakeApp: App {
             AboutView()
         }
         .windowResizability(.contentSize)
-        .commands { AboutCommands(); TranscriptFindCommands(); SharedProjectCommands(); ImportCommands() }
+
+        Window("What's New", id: "whats-new") {
+            WhatsNewView()
+        }
+
+        Window("Hot Take Help", id: "help") {
+            HelpView()
+        }
+        .commands { AboutCommands(); HelpCommands(); TranscriptFindCommands(); SharedProjectCommands(); ImportCommands() }
     }
 }

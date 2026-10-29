@@ -55,6 +55,7 @@ struct CopyForAgentButton: View {
 
     var body: some View {
         Button("For Agent", systemImage: "sparkles.rectangle.stack") { RecorderModel.current?.copyForAgent(take) }
+            .fixedSize()
             .help("Copy this recording as a request for a coding agent: what you said, with a picture at each click. "
                 + "Made on this Mac; paste it into Claude Code, Codex or Cursor.")
     }

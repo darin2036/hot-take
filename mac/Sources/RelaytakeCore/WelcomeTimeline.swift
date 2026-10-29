@@ -5,15 +5,15 @@ import Foundation
 public enum WelcomeTimeline {
     /// The welcome is over: the app is fully showing.
     public static let duration = 5.8
-    /// The rainbow starts to give way to the app here.
+    /// The backdrop starts to give way to the app here.
     public static let fadeOutStart = 4.8
 
-    /// 0...1: how much of the rainbow backdrop is still covering the app.
+    /// 0...1: how much of the backdrop is still covering the app.
     public static func backdrop(at time: Double) -> Double {
         1 - ramp(time, from: fadeOutStart, to: duration)
     }
 
-    /// 0...1: the logo coming up out of the shimmer.
+    /// 0...1: the logo coming up out of the glow.
     public static func logo(at time: Double) -> Double { ease(ramp(time, from: 0.3, to: 1.3)) }
 
     /// 0...1: the "Welcome" line.

@@ -15,7 +15,7 @@ struct LibraryView: View {
     @State private var window: NSWindow?
     /// Set while the pinned state is being restored at launch, so that does not resize the window.
     @State private var restoring = true
-    /// The rainbow welcome over the whole window, once each time the app launches, unless turned off in Settings.
+    /// The welcome over the whole window, once each time the app launches, unless turned off in Settings.
     @State private var showingWelcome = !WelcomeLaunch.played && (UserDefaults.standard.object(forKey: Pref.showWelcome) as? Bool ?? true)
 
     /// Width the pinned folder list takes (its default column width).
@@ -743,10 +743,15 @@ struct TakeDetailView: View {
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help(showInfo ? "Hide the info panel (⌥⌘I)" : "Show the info panel: title, tags, summary, notes and file details (⌥⌘I)")
             Button("Trash", systemImage: "trash", role: .destructive) { library.confirmDetailTrash = true }
+                .help("Move this recording to the Trash")
         }
-        // Wide: title and buttons on one line. Narrow: buttons drop below the title.
+        .fixedSize()
+        // Wide: title and labelled buttons on one line. Tighter: the buttons shrink to icons (tooltips name them).
+        // Narrowest: the buttons drop below the title.
+        let roomyTitle = titleBlock.frame(minWidth: 220, alignment: .leading)
         return ViewThatFits(in: .horizontal) {
-            HStack { titleBlock; Spacer(); actions }
+            HStack { roomyTitle; Spacer(minLength: 8); actions }
+            HStack { roomyTitle; Spacer(minLength: 8); actions.labelStyle(.iconOnly) }
             VStack(alignment: .leading, spacing: 8) { titleBlock; actions }
         }
     }
@@ -898,7 +903,7 @@ final class MenuPlayerView: AVPlayerView {
     var fileURL: URL?
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let fileURL else { return super.menu(for: event) }
+        guard fileURL != nil else { return super.menu(for: event) }
         let menu = NSMenu()
         let reveal = NSMenuItem(title: "Show in Folder", action: #selector(reveal), keyEquivalent: "")
         reveal.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)

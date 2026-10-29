@@ -33,7 +33,7 @@ enum Pref {
     static let speakerNotes = "speakerNotes"
     static let speakerNotesSize = "speakerNotesSize"
     static let playbackSpeed = "playbackSpeed"
-    /// Play the rainbow welcome each time the app launches. On by default.
+    /// Play the welcome each time the app launches. On by default.
     static let showWelcome = "showWelcome"
     /// When a recording stops, turn it into a request for a coding agent and copy it. Off by default.
     static let recordForAgent = "recordForAgent"
@@ -268,7 +268,7 @@ private struct LibraryPane: View {
             }
             Section {
                 Toggle("Show the welcome animation", isOn: $showWelcome)
-                    .help("The rainbow “What’s your Hot Take?” screen that plays each time Hot Take opens.")
+                    .help("The illuminated “What’s your Hot Take?” screen that plays each time Hot Take opens.")
             } header: {
                 Text("At launch")
             }

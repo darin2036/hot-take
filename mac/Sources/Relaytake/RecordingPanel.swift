@@ -10,7 +10,7 @@ final class RecordingPanel {
     static let shared = RecordingPanel()
     private var panel: NSPanel?
     private var mover: Any?
-    private static let positionKey = "recordingBarOrigin"
+    nonisolated private static let positionKey = "recordingBarOrigin"
 
     func show(model: RecorderModel) {
         if let panel {

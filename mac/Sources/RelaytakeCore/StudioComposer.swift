@@ -139,7 +139,7 @@ public enum StudioComposer {
             // Text is drawn into each frame by our own compositor. (the system's Core Animation video tool
             // returned blank frames on the test Mac, so it is not used.)
             let frameDuration = try await videoTrack.load(.minFrameDuration)
-            let video = AVMutableVideoComposition()
+            var video = AVVideoComposition.Configuration()
             video.renderSize = renderSize
             video.frameDuration = frameDuration.isValid && frameDuration.seconds > 0 ? frameDuration : CMTime(value: 1, timescale: 30)
             video.customVideoCompositorClass = StudioCompositor.self
@@ -159,7 +159,7 @@ public enum StudioComposer {
                             intervals: $0.intervals)
                     })
             ]
-            videoComposition = video
+            videoComposition = AVVideoComposition(configuration: video)
         }
 
         return Output(composition: composition, audioMix: audioMix, videoComposition: videoComposition, renderSize: renderSize)

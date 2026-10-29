@@ -270,7 +270,7 @@ final class StudioInstruction: NSObject, AVVideoCompositionInstructionProtocol {
     let timeRange: CMTimeRange
     let enablePostProcessing = false
     let containsTweening = true  // the text fades, so frames differ over time
-    let requiredSourceTrackIDs: [NSValue]?
+    nonisolated(unsafe) let requiredSourceTrackIDs: [NSValue]?
     let passthroughTrackID = kCMPersistentTrackID_Invalid
     let trackID: CMPersistentTrackID
     let transform: CGAffineTransform

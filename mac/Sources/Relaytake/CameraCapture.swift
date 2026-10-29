@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import AppKit
 import RelaytakeCore
 import SwiftUI
@@ -211,7 +211,8 @@ struct CameraPreview: NSViewRepresentable {
         let host = PreviewHost()
         host.draggable = draggable
         host.previewLayer.videoGravity = .resizeAspectFill
-        let layer = host.previewLayer, session = session
+        nonisolated(unsafe) let layer = host.previewLayer
+        nonisolated(unsafe) let session = session
         cameraSessionQueue.async { layer.session = session }
         return host
     }
@@ -220,7 +221,7 @@ struct CameraPreview: NSViewRepresentable {
 
     /// The layer is let go on the session queue: releasing it from the main thread waits on the session's lock.
     static func dismantleNSView(_ host: PreviewHost, coordinator: ()) {
-        let layer = host.previewLayer
+        nonisolated(unsafe) let layer = host.previewLayer
         host.layer = nil
         cameraSessionQueue.async { layer.session = nil }
     }

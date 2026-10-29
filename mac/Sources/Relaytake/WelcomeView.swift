@@ -7,8 +7,7 @@ enum WelcomeLaunch {
     @MainActor static var played = false
 }
 
-/// Each time Hot Take launches: a rainbow shimmer over the whole window with the logo in the middle, a plain
-/// "Welcome" and "What's your Hot Take?", then it fades away into the app. A click or key press skips ahead.
+/// A brief illuminated title sequence at launch. A click or key press skips to the library.
 struct WelcomeView: View {
     let onFinish: () -> Void
 
@@ -18,7 +17,7 @@ struct WelcomeView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
             WelcomeScene(elapsed: context.date.timeIntervalSince(started), animated: !reduceMotion)
         }
         .contentShape(Rectangle())
@@ -54,83 +53,151 @@ struct WelcomeView: View {
     }
 }
 
-/// One picture of the welcome at a given moment. Everything is a function of `elapsed`, which also lets the
-/// `--welcome-snapshot` check draw any frame.
+/// A deterministic frame of the welcome, also used by `--welcome-snapshot`.
 struct WelcomeScene: View {
     let elapsed: Double
     var animated = true
 
     private var backdrop: Double { WelcomeTimeline.backdrop(at: elapsed) }
     private var content: Double { WelcomeTimeline.content(at: elapsed) }
+    // Reduce Motion presents the finished composition immediately, with only the exit crossfade.
+    private var reveal: Double { animated ? elapsed : 4 }
 
     var body: some View {
-        ZStack {
-            Shimmer(time: animated ? elapsed : 0)
-                .opacity(backdrop)
-            // Keeps the words readable over the brightest colors.
-            RadialGradient(colors: [.black.opacity(0.2), .clear], center: .center, startRadius: 0, endRadius: 420)
-                .opacity(backdrop)
+        GeometryReader { proxy in
+            let scale = min(proxy.size.width / 1000, proxy.size.height / 680)
+            ZStack {
+                WelcomeLightField(time: animated ? elapsed : 2.8)
+                    .opacity(backdrop)
 
-            VStack(spacing: 22) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 128, height: 128)
-                    .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
-                    .scaleEffect(0.8 + 0.2 * WelcomeTimeline.logo(at: elapsed))
-                    .opacity(WelcomeTimeline.logo(at: elapsed))
+                VStack(spacing: 0) {
+                    ZStack {
+                        Circle()
+                            .fill(RadialGradient(
+                                colors: [Color(red: 0.43, green: 0.28, blue: 1).opacity(0.3), .clear],
+                                center: .center, startRadius: 24, endRadius: 120))
+                            .frame(width: 240, height: 240)
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .frame(width: 132, height: 132)
+                            .shadow(color: .black.opacity(0.45), radius: 22, y: 14)
+                    }
+                    .frame(height: 156)
+                    .scaleEffect(0.88 + 0.12 * WelcomeTimeline.logo(at: reveal))
+                    .opacity(WelcomeTimeline.logo(at: reveal))
 
-                VStack(spacing: 6) {
-                    Text("Welcome")
-                        .font(.system(size: 22, weight: .medium, design: .rounded))
-                        .opacity(0.9 * WelcomeTimeline.greeting(at: elapsed))
-                    Text("What’s your Hot Take?")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .opacity(WelcomeTimeline.question(at: elapsed))
-                        .offset(y: 8 * (1 - WelcomeTimeline.question(at: elapsed)))
+                    Text("WELCOME TO HOT TAKE")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(3.5)
+                        .foregroundStyle(Color(red: 0.72, green: 0.69, blue: 0.89))
+                        .padding(.top, 27)
+                        .opacity(WelcomeTimeline.greeting(at: reveal))
+
+                    VStack(spacing: -2) {
+                        Text("What’s your")
+                            .foregroundStyle(Color.white.opacity(0.95))
+                        Text("Hot Take?")
+                            .foregroundStyle(LinearGradient(
+                                colors: [Color(red: 0.75, green: 0.73, blue: 1),
+                                         Color(red: 0.65, green: 0.52, blue: 1),
+                                         Color(red: 1, green: 0.66, blue: 0.74)],
+                                startPoint: .leading, endPoint: .trailing))
+                    }
+                    .font(.system(size: 66, weight: .bold))
+                    .tracking(-2.5)
+                    .fixedSize()
+                    .padding(.top, 16)
+                    .opacity(WelcomeTimeline.question(at: reveal))
+                    .offset(y: animated ? 12 * (1 - WelcomeTimeline.question(at: reveal)) : 0)
+
+                    Text("Show it. Say it. Keep it yours.")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(Color(red: 0.64, green: 0.63, blue: 0.74))
+                        .padding(.top, 20)
+                        .opacity(WelcomeTimeline.question(at: reveal))
                 }
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 2)
+                .frame(width: 800, height: 460)
+                .scaleEffect(scale)
+                .position(x: proxy.size.width / 2, y: proxy.size.height * 0.47)
+                .opacity(content)
+
+                VStack {
+                    Spacer()
+                    HStack {
+                        Label("MADE ON YOUR MAC. KEPT ON YOUR MAC.", systemImage: "lock")
+                            .font(.system(size: 9, weight: .medium))
+                            .tracking(1.2)
+                        Spacer()
+                        Text("Click or press any key to skip")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(Color(red: 0.61, green: 0.59, blue: 0.72))
+                    .padding(30)
+                }
+                .opacity(content * WelcomeTimeline.logo(at: reveal))
             }
-            .opacity(content)
         }
         .ignoresSafeArea()
     }
 }
 
-/// A slowly drifting rainbow with a soft band of light that sweeps across it.
-private struct Shimmer: View {
+/// Layered vector light trails: bounded drawing work, no textures or particle simulation.
+private struct WelcomeLightField: View {
     let time: Double
+    private let violet = Color(red: 0.42, green: 0.25, blue: 0.95)
 
     var body: some View {
         GeometryReader { proxy in
+            let size = proxy.size
             ZStack {
-                MeshGradient(width: 3, height: 3, points: points, colors: colors)
-                // The sweep: a tilted band of light that passes over every few seconds.
-                let travel = (time * 0.32).truncatingRemainder(dividingBy: 1.7) - 0.35
-                LinearGradient(colors: [.clear, .white.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: proxy.size.width * 0.35)
-                    .rotationEffect(.degrees(18))
-                    .offset(x: (travel - 0.5) * proxy.size.width * 1.4)
-                    .blendMode(.overlay)
+                Color(red: 0.025, green: 0.025, blue: 0.065)
+                RadialGradient(colors: [violet.opacity(0.27), violet.opacity(0.08), .clear],
+                               center: UnitPoint(x: 0.5, y: 0.27),
+                               startRadius: 0, endRadius: size.width * 0.65)
+                RadialGradient(colors: [Color(red: 0.15, green: 0.25, blue: 0.65).opacity(0.16), .clear],
+                               center: UnitPoint(x: 0.05, y: 0.85),
+                               startRadius: 0, endRadius: size.width * 0.5)
+
+                Canvas { context, bounds in
+                    let sx = bounds.width / 1000
+                    let sy = bounds.height / 680
+                    // Each trail bends toward the flame, then opens back out at the edges.
+                    for index in 0..<18 {
+                        let lane = Double(index) - 8.5
+                        let drift = sin(time * 0.55 + lane * 0.15) * 16
+                        var path = Path()
+                        path.move(to: CGPoint(x: -80 * sx, y: (380 + lane * 13 + drift) * sy))
+                        path.addCurve(
+                            to: CGPoint(x: 1080 * sx, y: (220 + lane * 18 - drift) * sy),
+                            control1: CGPoint(x: 330 * sx, y: (20 + lane * 7 + drift) * sy),
+                            control2: CGPoint(x: 620 * sx, y: (540 + lane * 6 - drift) * sy))
+                        let strength = 0.12 + 0.17 * (0.5 + 0.5 * sin(lane * 0.7 + time * 0.8))
+                        context.stroke(path, with: .linearGradient(
+                            Gradient(stops: [
+                                .init(color: violet.opacity(0), location: 0),
+                                .init(color: Color(red: 0.40, green: 0.46, blue: 1).opacity(strength), location: 0.22),
+                                .init(color: Color(red: 0.72, green: 0.47, blue: 1).opacity(strength), location: 0.53),
+                                .init(color: Color(red: 1, green: 0.52, blue: 0.66).opacity(strength * 0.7), location: 0.78),
+                                .init(color: violet.opacity(0), location: 1)
+                            ]), startPoint: .zero, endPoint: CGPoint(x: bounds.width, y: 0)),
+                            lineWidth: index.isMultiple(of: 5) ? 1.3 : 0.65)
+                    }
+                    // Sparse, deterministic points of light drift gently upward.
+                    for index in 0..<32 {
+                        let seed = Double(index)
+                        let x = (seed * 0.61803398875).truncatingRemainder(dividingBy: 1)
+                        let y = (seed * 0.381966 + 1 - time * 0.009).truncatingRemainder(dividingBy: 1)
+                        let alpha = 0.10 + 0.18 * (0.5 + 0.5 * sin(seed * 2.4 + time * 0.7))
+                        let diameter = index.isMultiple(of: 4) ? 2.0 : 1.0
+                        let dot = CGRect(x: x * bounds.width, y: y * bounds.height, width: diameter, height: diameter)
+                        context.fill(Path(ellipseIn: dot), with: .color(.white.opacity(alpha)))
+                    }
+                }
+                // A quiet center gives the title a clean silhouette.
+                RadialGradient(colors: [.clear, .black.opacity(0.38)], center: .center,
+                               startRadius: size.height * 0.15, endRadius: size.width * 0.7)
             }
             .clipped()
-        }
-    }
-
-    private var points: [SIMD2<Float>] {
-        func drift(_ speed: Double, _ phase: Double, _ amount: Double) -> Float { Float(sin(time * speed + phase) * amount) }
-        return [
-            [0, 0], [0.5 + drift(0.7, 0, 0.12), 0], [1, 0],
-            [0, 0.5 + drift(0.6, 1, 0.12)], [0.5 + drift(0.5, 2, 0.16), 0.5 + drift(0.8, 3, 0.16)], [1, 0.5 + drift(0.9, 4, 0.12)],
-            [0, 1], [0.5 + drift(0.65, 5, 0.12), 1], [1, 1],
-        ]
-    }
-
-    /// Every hue once across the picture, turning slowly.
-    private var colors: [Color] {
-        (0..<9).map { index in
-            let hue = (Double(index) / 9 + time * 0.06).truncatingRemainder(dividingBy: 1)
-            return Color(hue: hue, saturation: 0.72, brightness: 0.96)
         }
     }
 }
