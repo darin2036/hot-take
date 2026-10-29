@@ -10,6 +10,12 @@ Builds 2 and later.
 
 - **Mac app:** redesigned the launch welcome with a midnight violet backdrop, flowing light trails around the flame icon, larger type and a visible skip hint. Reduce Motion shows a still composition.
 
+### Current pull request: edit by transcript and filler words
+
+- **Mac app:** the Studio has a **Transcript** panel beside the preview. Select lines and press Delete (or **Cut Lines**) to cut the video under them, and **Bring Back** puts cut lines back. Cuts ripple and undo like any other.
+- **Mac app:** **Tighten** in the Studio can find filler words ("um", "uh", "er", "ah", "hmm") from each word's timing, with **Cut All Fillers**. It always listens with SpeechTranscriber, because the classic dictation model drops these sounds. English only, on this Mac.
+- **Mac app:** fix: cutting several Tighten suggestions at once no longer cuts too much when two of them overlap.
+
 ### Added
 
 - **Mac app:** shortcuts that work in any app: start/stop, pause, screenshot, and a take for an agent (⌃⌥⌘R, P, S and A by default, changeable in Settings).

@@ -204,6 +204,18 @@ The Studio is where you edit a take. It is one fixed screen: a preview that play
 - Everything sits on the edited timeline, so a cut ripples through text, marks, zooms and voiceover.
 - **Undo** and **Redo** cover all of it.
 
+### Edit by transcript
+
+The **Transcript** button (the lines icon at the top of the Studio) shows the take's transcript beside the preview. Cutting a line cuts the video it was spoken over.
+
+- Click a line to jump to it. **Shift-click** selects a run of lines and **Command-click** adds or removes one.
+- Press **Delete** or click **Cut Lines** to cut the selected lines. Right-click a line for *Cut* and *Bring Back*.
+- Cut lines are struck through and stay in the list. Select them and click **Bring Back** to put that footage back where it was. A line with only some of it cut says *Partly cut*.
+- A cut here is the same as a cut on the timeline: it ripples through text, marks, zooms and voiceover, and **Undo** reverses it.
+- With no transcript yet, **Make Transcript** creates one on this Mac.
+
+Cuts follow each line's timing, so a cut can take a moment of the pause before or after the words.
+
 ### Text, music and voiceover
 
 - **Add Text** puts words at the playhead. Drag them on the preview, resize the bar to change how long they show, and choose font, size, color and an optional box.
@@ -212,7 +224,9 @@ The Studio is where you edit a take. It is one fixed screen: a preview that play
 
 ### Tighten
 
-**Tighten** finds long pauses (you choose 1, 2 or 3 seconds) and restarts (a sentence said again). They show as dashed orange stretches on the Video track. Hover one to cut it or keep it. **Cut All Pauses** cuts every pause at once. Finding things changes nothing, and nothing is cut automatically.
+**Tighten** finds long pauses (you choose 1, 2 or 3 seconds), restarts (a sentence said again) and, with **Filler words** on, the sounds "um", "uh", "er", "ah" and "hmm". They show as dashed orange stretches on the Video track. Hover one to cut it or keep it. **Cut All Pauses** cuts every pause at once and **Cut All Fillers** cuts every filler word. Finding things changes nothing, and nothing is cut automatically.
+
+Filler words are found from the time the speech recognizer gives each word, on this Mac. The first search listens to the recording once more with Apple's SpeechTranscriber, even if Settings uses the classic dictation model, because that model leaves out "um" and "uh". This doesn't change your transcript. It works in English only. Words like "like" and "you know" are left alone, since they are often real words.
 
 ### Looks: Background, Auto Zoom, Captions, Marks
 

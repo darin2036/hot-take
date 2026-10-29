@@ -15,13 +15,16 @@ enum Pipeline {
     ) async -> [String] {
         var notes: [String] = []
         var transcript: [CaptionSegment] = []
+        var words: [TimedWord] = []
 
         if options.captions || options.summary {
             await progress("Transcribing…")
             do {
-                transcript = try await Transcriber.transcribe(videoAt: take.video) { text in
+                let heard = try await Transcriber.listen(to: take.video) { text in
                     Task { @MainActor in progress(text) }
                 }
+                transcript = heard.segments
+                if heard.keepsFillers { words = heard.words }
                 if options.captions && !transcript.isEmpty {
                     try Captions.webVTT(transcript).write(to: take.captions, atomically: true, encoding: .utf8)
                 }
@@ -51,13 +54,14 @@ enum Pipeline {
             let seconds = try? await AVURLAsset(url: take.video).load(.duration).seconds
             var metadata = TakeMetadata(
                 title: title, summary: summary, created: created, durationSeconds: seconds,
-                transcript: transcript)
+                transcript: transcript, words: words)
             // Running again on a take that already has notes must not erase what the user wrote.
             if let existing = TakeLibrary.metadata(for: take) {
                 metadata.tags = existing.tags
                 metadata.notes = existing.notes
                 metadata.chapters = existing.chapters
                 metadata.keepCapture(of: existing)
+                if !words.isEmpty { metadata.words = words }
                 if summary.isEmpty { metadata.summary = existing.summary }
                 if title == take.baseName, !existing.title.isEmpty { metadata.title = existing.title }
             }

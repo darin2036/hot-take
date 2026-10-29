@@ -3,8 +3,8 @@ import Foundation
 import RelaytakeCore
 
 /// Finds places a take could be tightened: long pauses (measured from the audio and the transcript's timing) and
-/// restarts (found by comparing neighbouring transcript lines, then checked by the on-device model if it is there).
-/// Nothing here changes the video.
+/// restarts (found by comparing neighbouring transcript lines, then checked by the on-device model if it is there), and,
+/// if asked, filler sounds like "um" and "uh" (from the recognizer's word timings). Nothing here changes the video.
 enum EditAnalysis {
     struct Result {
         var suggestions: [EditSuggestion]
@@ -13,12 +13,16 @@ enum EditAnalysis {
     }
 
     /// `pauseLength` is the shortest pause, in seconds, worth proposing.
-    static func run(for entry: TakeEntry, pauseLength: Double = 2, progress: @escaping @MainActor (String) -> Void) async -> Result {
+    static func run(
+        for entry: TakeEntry, pauseLength: Double = 2, fillers findFillers: Bool = false,
+        progress: @escaping @MainActor (String) -> Void
+    ) async -> Result {
         var notes: [String] = []
         var audioSilences: [TimeSpan] = []
         var gaps: [TimeSpan] = []
         var restarts: [EditSuggestion] = []
         var recommended: [EditSuggestion] = []
+        var fillers: [EditSuggestion] = []
         var threshold: Double?
 
         let duration = (try? await AVURLAsset(url: entry.files.video).load(.duration).seconds) ?? 0
@@ -61,9 +65,22 @@ enum EditAnalysis {
             }
         }
 
+        if findFillers {
+            if SpeechPreferences.locale.language.languageCode != .english {
+                notes.append("Filler words are only recognized in English recordings.")
+            } else {
+                do {
+                    fillers = FillerWords.find(in: try await Transcripts.words(for: entry, progress: progress))
+                } catch {
+                    notes.append("Filler words could not be found: \(error.localizedDescription)")
+                }
+            }
+        }
+
         return Result(
             suggestions: EditSuggestions.combine(
-                audioSilences: audioSilences, transcriptGaps: gaps, restarts: restarts, recommended: recommended),
+                audioSilences: audioSilences, transcriptGaps: gaps, restarts: restarts, recommended: recommended,
+                fillers: fillers),
             notes: notes, noiseThreshold: threshold)
     }
 }

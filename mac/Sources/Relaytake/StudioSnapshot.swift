@@ -63,7 +63,15 @@ enum StudioSnapshot {
                 EditSuggestion(kind: .silence, span: TimeSpan(start: 2.2, end: 4.4), reason: "Quiet for 2.2 s"),
                 EditSuggestion(kind: .restart, span: TimeSpan(start: 9, end: 11.4), reason: "Said again just after: \"So today I want to show you\""),
                 EditSuggestion(kind: .silence, span: TimeSpan(start: 15, end: 17.6), reason: "Quiet for 2.6 s"),
+                EditSuggestion(kind: .filler, span: TimeSpan(start: 1.2, end: 1.7), reason: "Filler: \u{201C}um\u{201D}"),
             ])
+        }
+
+        // "transcript": the second line cut from the Transcript panel, and the fourth selected.
+        if variant == "transcript" {
+            model.selection = .none
+            model.cutLines([1])
+            model.clickLine(3, shift: false, command: false)
         }
 
         let root: AnyView

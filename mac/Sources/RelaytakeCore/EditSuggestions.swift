@@ -10,6 +10,8 @@ public struct EditSuggestion: Identifiable, Equatable, Sendable {
         case restart
         /// Recommended by the on-device language model from the transcript. A suggestion only.
         case recommended
+        /// A filler sound ("um", "uh"), timed from the recognizer's own word timings.
+        case filler
     }
 
     public let kind: Kind
@@ -202,7 +204,8 @@ public enum EditSuggestions {
     /// overlapping silences are merged, a silence inside a recommended cut is dropped as redundant,
     /// and the result is in time order.
     public static func combine(
-        audioSilences: [TimeSpan], transcriptGaps: [TimeSpan], restarts: [EditSuggestion] = [], recommended: [EditSuggestion]
+        audioSilences: [TimeSpan], transcriptGaps: [TimeSpan], restarts: [EditSuggestion] = [], recommended: [EditSuggestion],
+        fillers: [EditSuggestion] = []
     ) -> [EditSuggestion] {
         // A model suggestion that overlaps a restart the word comparison already found says the same thing twice.
         let model = recommended.filter { candidate in
@@ -216,11 +219,15 @@ public enum EditSuggestions {
             .map { span in
                 EditSuggestion(kind: .silence, span: span, reason: "Quiet for \(String(format: "%.1f", span.length)) s")
             }
-        return (silences + proposals).sorted { $0.span.start < $1.span.start }
+        // A filler inside a restart that is already proposed goes with it.
+        let ownFillers = fillers.filter { filler in
+            !proposals.contains { $0.span.start <= filler.span.start && $0.span.end >= filler.span.end }
+        }
+        return (silences + proposals + ownFillers).sorted { $0.span.start < $1.span.start }
     }
 
     /// Merges touching or overlapping spans (input must be sorted by start).
-    static func merge(_ spans: [TimeSpan]) -> [TimeSpan] {
+    public static func merge(_ spans: [TimeSpan]) -> [TimeSpan] {
         var result: [TimeSpan] = []
         for span in spans {
             if var last = result.last, span.start <= last.end {

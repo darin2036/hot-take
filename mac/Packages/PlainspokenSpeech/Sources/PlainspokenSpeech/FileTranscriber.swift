@@ -63,9 +63,9 @@ public enum FileTranscriber {
         let results = Task { () -> Void in
             switch engine {
             case .speechTranscriber:
-                for try await r in (module as! SpeechTranscriber).results { collector.add(String(r.text.characters), r.range) }
+                for try await r in (module as! SpeechTranscriber).results { collector.add(r.text, r.range) }
             case .dictationTranscriber:
-                for try await r in (module as! DictationTranscriber).results { collector.add(String(r.text.characters), r.range) }
+                for try await r in (module as! DictationTranscriber).results { collector.add(r.text, r.range) }
             }
         }
 
@@ -101,14 +101,37 @@ public enum FileTranscriber {
             self.progress = progress
         }
 
-        func add(_ text: String, _ range: CMTimeRange) {
-            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        func add(_ text: AttributedString, _ range: CMTimeRange) {
+            let clean = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { return }
             let end = range.end.seconds.isFinite ? range.end.seconds : range.start.seconds
+            let words = Self.words(in: text)
             lock.lock()
-            segments.append(TranscriptSegment(text: clean, start: max(0, range.start.seconds), end: max(end, range.start.seconds)))
+            segments.append(TranscriptSegment(
+                text: clean, start: max(0, range.start.seconds), end: max(end, range.start.seconds), words: words))
             lock.unlock()
             if duration > 0 { progress(Progress(stage: .transcribing, fraction: min(0.99, end / duration))) }
+        }
+
+        /// Each timed run of the result as a word. A run can hold a space or more than one word; the time is
+        /// shared out by length so every word still gets a moment of its own.
+        static func words(in text: AttributedString) -> [TranscriptWord] {
+            var words: [TranscriptWord] = []
+            for run in text.runs {
+                guard let range = run.audioTimeRange, range.start.seconds.isFinite, range.end.seconds.isFinite else { continue }
+                let pieces = String(text[run.range].characters).split(whereSeparator: \.isWhitespace).map(String.init)
+                guard !pieces.isEmpty else { continue }
+                let start = max(0, range.start.seconds)
+                let length = max(0, range.end.seconds - start)
+                let total = Double(pieces.reduce(0) { $0 + $1.count })
+                var cursor = start
+                for piece in pieces {
+                    let share = total > 0 ? length * Double(piece.count) / total : 0
+                    words.append(TranscriptWord(text: piece, start: cursor, end: cursor + share))
+                    cursor += share
+                }
+            }
+            return words
         }
 
         func transcript(vocabulary: [String]) -> Transcript {

@@ -99,6 +99,7 @@ final class StudioModel: ObservableObject {
         self.library = library
         let notes = TakeLibrary.metadata(for: take.files)
         sourceChapters = (notes?.chaptersEnabled ?? Pref.chaptersByDefault) ? notes?.chapters ?? [] : []
+        transcriptLines = notes?.transcript ?? []
         // A take recorded with a camera has its camera drawn in already; the Studio goes back to the originals so
         // the camera can be moved, resized or hidden.
         let hasOriginals = FileManager.default.fileExists(atPath: take.files.screenOriginal.path)
@@ -335,6 +336,7 @@ final class StudioModel: ObservableObject {
             do {
                 let cues = try await Transcripts.ensure(for: take) { [weak self] text in self?.captionStatus = text }
                 if cues.isEmpty { message = "No speech was found to caption."; return }
+                transcriptLines = cues
                 edit { $0.captions = StudioCaptions(cues: cues) }
                 library.refresh()
             } catch { message = "Could not make captions: \(error.localizedDescription)" }
@@ -658,6 +660,7 @@ final class StudioModel: ObservableObject {
         case .clip(let id): edit { $0.removeClip(id) }
         case .audioPart(let id): edit { $0.removeOriginalAudioPart(id) }
         case .range(let range): removeSection(range)
+        case .none where !selectedLines.isEmpty: cutLines(selectedLines)
         default: return
         }
         selection = .none
@@ -675,13 +678,84 @@ final class StudioModel: ObservableObject {
         selection = .original
     }
 
-    /// Applies cuts suggested from the *original* recording by mapping them onto the edited timeline.
+    /// Applies cuts suggested from the *original* recording by mapping them onto the edited timeline. Overlapping spans
+    /// are joined first, so no stretch is removed twice.
     func applySourceCuts(_ spans: [TimeSpan]) {
+        let joined = EditSuggestions.merge(spans.sorted { $0.start < $1.start })
         edit { project in
-            let outputs = spans.flatMap { project.cuts.outputSpans(forSource: $0) }
+            let outputs = joined.flatMap { project.cuts.outputSpans(forSource: $0) }
             for span in outputs.sorted(by: { $0.start > $1.start }) { try project.remove(span) }
         }
     }
+
+    // MARK: Transcript
+
+    /// The take's transcript lines, at their times in the original. Choosing lines and cutting them edits the video.
+    @Published private(set) var transcriptLines: [CaptionSegment] = []
+    @Published private(set) var transcriptStatus: String?
+    /// Lines chosen in the Transcript panel, by index into `transcriptLines`.
+    @Published var selectedLines: Set<Int> = []
+
+    func loadTranscript() {
+        transcriptLines = TakeLibrary.metadata(for: take.files)?.transcript ?? []
+        selectedLines = selectedLines.filter { transcriptLines.indices.contains($0) }
+    }
+
+    /// Makes the transcript on this Mac (saved with the take) when there is none yet.
+    func makeTranscript() {
+        guard transcriptStatus == nil else { return }
+        transcriptStatus = "Starting…"
+        Task {
+            defer { transcriptStatus = nil }
+            do {
+                transcriptLines = try await Transcripts.ensure(for: take) { [weak self] in self?.transcriptStatus = $0 }
+                if transcriptLines.isEmpty { message = "No speech was found in this recording." }
+                library.refresh()
+            } catch { message = "Could not make the transcript: \(error.localizedDescription)" }
+        }
+    }
+
+    func lineState(_ index: Int) -> TranscriptCuts.LineState {
+        transcriptLines.indices.contains(index) ? TranscriptCuts.state(of: transcriptLines[index], in: project.cuts) : .kept
+    }
+
+    /// Cuts the lines' stretches of the original out of the edit, as one undoable step.
+    func cutLines(_ indices: Set<Int>) {
+        let lines = indices.sorted().filter { transcriptLines.indices.contains($0) }.map { transcriptLines[$0] }
+        guard !lines.isEmpty else { return }
+        selection = .none
+        applySourceCuts(TranscriptCuts.spans(of: lines))
+    }
+
+    /// Brings back whatever of the lines was cut, in its place, as one undoable step.
+    func restoreLines(_ indices: Set<Int>) {
+        let lines = indices.sorted().filter { transcriptLines.indices.contains($0) }.map { transcriptLines[$0] }
+        guard !lines.isEmpty else { return }
+        edit { project in
+            for span in TranscriptCuts.spans(of: lines) { project.restore(source: span) }
+        }
+    }
+
+    /// Chooses a line the way a list does: a click picks it alone, Shift extends from the last one picked, and Command
+    /// adds or removes it. A plain click also moves the playhead to the line (if any of it is still in the edit).
+    func clickLine(_ index: Int, shift: Bool, command: Bool) {
+        guard transcriptLines.indices.contains(index) else { return }
+        selection = .none
+        if command {
+            if selectedLines.contains(index) { selectedLines.remove(index) } else { selectedLines.insert(index) }
+            lineAnchor = index
+        } else if shift, let anchor = lineAnchor {
+            selectedLines = Set(min(anchor, index)...max(anchor, index))
+        } else {
+            selectedLines = [index]
+            lineAnchor = index
+            let line = transcriptLines[index]
+            if let start = project.cuts.outputSpans(forSource: TimeSpan(start: line.start, end: line.end)).first?.start {
+                seek(to: start)
+            }
+        }
+    }
+    private var lineAnchor: Int?
 
     // MARK: Tighten
 
@@ -698,17 +772,21 @@ final class StudioModel: ObservableObject {
     /// Where a proposal sits on the edited timeline (it may be split if part of it was already cut).
     func tightenSpans(for suggestion: EditSuggestion) -> [TimeSpan] { project.cuts.outputSpans(forSource: suggestion.span) }
 
-    /// Looks for pauses at least `pauseLength` seconds long and for restarts. Calls `done` with how many it found.
-    func findTighten(pauseLength: Double, done: @escaping (Int) -> Void = { _ in }) {
+    /// Looks for pauses at least `pauseLength` seconds long and for restarts, and for filler words if `fillers`. Calls
+    /// `done` with how many it found.
+    func findTighten(pauseLength: Double, fillers: Bool = false, done: @escaping (Int) -> Void = { _ in }) {
         guard tightenStatus == nil else { return }
         tightenStatus = "Starting…"
         tightenNotes = []
         Task {
-            let result = await EditAnalysis.run(for: take, pauseLength: pauseLength) { [weak self] in self?.tightenStatus = $0 }
+            let result = await EditAnalysis.run(for: take, pauseLength: pauseLength, fillers: fillers) { [weak self] in
+                self?.tightenStatus = $0
+            }
             tighten = result.suggestions
             tightenNotes = result.notes
             tightenSearched = true
             tightenStatus = nil
+            loadTranscript()  // finding restarts makes the transcript if there was none
             done(pendingTighten.count)
         }
     }
@@ -728,6 +806,7 @@ final class StudioModel: ObservableObject {
 
     func select(_ new: Selection) {
         selection = new
+        if new != .none { selectedLines = [] }
         // Make what you just picked visible in the preview.
         switch new {
         case .text(let id): if let text = project.text(id) { seek(to: text.start + 0.05) }

@@ -180,6 +180,46 @@ public extension EditModel {
     }
 }
 
+/// Bringing back footage that was cut: the transcript's Bring Back puts cut lines back where they were.
+public extension EditModel {
+    /// Puts back whatever of `range` (a stretch of the original) is cut out, each piece in its place between the kept
+    /// parts, joined to a neighbor it touches. Returns each piece brought back as where it now starts in the edited
+    /// video and how long it is, in order, so later things can be moved to make room.
+    @discardableResult
+    mutating func restore(_ range: TimeSpan) -> [(at: TimeInterval, length: TimeInterval)] {
+        guard range.start.isFinite, range.end.isFinite else { return [] }
+        let end = min(duration, range.end)
+        var cursor = max(0, range.start)
+        var restored: [(at: TimeInterval, length: TimeInterval)] = []
+        while cursor < end - 1e-9 {
+            if let kept = segments.first(where: { $0.start <= cursor + 1e-9 && cursor < $0.end - 1e-9 }) {
+                cursor = kept.end
+                continue
+            }
+            let next = segments.firstIndex { $0.start > cursor + 1e-9 } ?? segments.count
+            let gapEnd = min(end, next < segments.count ? segments[next].start : duration)
+            defer { cursor = gapEnd }
+            guard gapEnd - cursor >= Self.minimumSegment else { continue }
+            let at = segments[..<next].reduce(0) { $0 + $1.length }
+            var piece = TimeSpan(start: cursor, end: gapEnd)
+            var index = next
+            // Join a neighbor it touches in the original, so no splice is left where nothing was ever split.
+            if index > 0, abs(segments[index - 1].end - piece.start) < 1e-6 {
+                piece.start = segments[index - 1].start
+                segments.remove(at: index - 1)
+                index -= 1
+            }
+            if index < segments.count, abs(segments[index].start - piece.end) < 1e-6 {
+                piece.end = segments[index].end
+                segments.remove(at: index)
+            }
+            segments.insert(piece, at: index)
+            restored.append((at, gapEnd - cursor))
+        }
+        return restored
+    }
+}
+
 public func timeLabel(_ seconds: TimeInterval) -> String {
     let total = max(0, seconds)
     return String(format: "%02d:%04.1f", Int(total) / 60, total.truncatingRemainder(dividingBy: 60))

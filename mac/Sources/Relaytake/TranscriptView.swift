@@ -398,7 +398,7 @@ struct TranscriptView: View {
             defer { status = nil }
             do {
                 // Remaking replaces what is there; the first time simply makes it.
-                if !segments.isEmpty { try? TakeLibrary.update(take) { $0.transcript = []; $0.translations = [:] } }
+                if !segments.isEmpty { try? TakeLibrary.update(take) { $0.transcript = []; $0.translations = [:]; $0.words = [] } }
                 translations = [:]
                 shown = nil
                 segments = try await Transcripts.ensure(for: take) { status = $0 }
