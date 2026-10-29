@@ -763,7 +763,7 @@ private struct Waveform: View {
     }
 }
 
-/// Proposed cuts (long pauses and restarts), drawn over the Video track as dashed orange stretches. Hover one to cut
+/// Proposed cuts (long pauses, restarts and filler words), drawn over the Video track as dashed orange stretches. Hover one to cut
 /// it or dismiss it. Cutting is one undoable step.
 private struct TightenMarks: View {
     @ObservedObject var model: StudioModel
@@ -787,7 +787,13 @@ private struct TightenMark: View {
     let candidate: EditSuggestion
     @State private var hovering = false
 
-    private var title: String { candidate.kind == .silence ? "Pause" : "Restart" }
+    private var title: String {
+        switch candidate.kind {
+        case .silence: "Pause"
+        case .filler: "Filler"
+        case .restart, .recommended: "Restart"
+        }
+    }
 
     var body: some View {
         RoundedRectangle(cornerRadius: 6)

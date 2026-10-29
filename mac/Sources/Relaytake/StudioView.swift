@@ -22,12 +22,10 @@ struct StudioView: View {
     @AppStorage("studioKeepOriginal") private var keepOriginal = true
     @AppStorage("studioQuality") private var sizeChoice = "medium"
     @AppStorage("studioIncludeAudio") private var includeAudio = true
+    /// The transcript beside the preview, for cutting by line.
+    @AppStorage("studioShowTranscript") private var showTranscript = true
 
-    private var saveOptions: StudioSaveOptions {
-        StudioSaveOptions(
-            quality: keepOriginal ? nil : EncodingPreferences.resolve(VideoQuality(rawValue: sizeChoice) ?? .medium),
-            includeAudio: includeAudio)
-    }
+    private var saveOptions: StudioSaveOptions { .stored }
 
     init(take: TakeEntry, library: LibraryModel, close: @escaping () -> Void) {
         self.init(model: StudioModel(take: take, library: library), close: close)
@@ -44,16 +42,21 @@ struct StudioView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            StudioPreview(model: model)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 90, maxHeight: .infinity)
-                .playbackControls(title: "Studio preview: \(take.title)", owner: model, library: library) {
-                    AnyView(StudioStage(model: model))
-                }
+            HStack(spacing: 10) {
+                StudioPreview(model: model)
+                    .frame(minHeight: 90, maxHeight: .infinity)
+                    .playbackControls(title: "Studio preview: \(take.title)", owner: model, library: library) {
+                        AnyView(StudioStage(model: model))
+                    }
+                if showTranscript { StudioTranscriptPanel(model: model, clock: model.clock) }
+            }
+            .padding(.horizontal, 12)
             Transport(model: model, clock: model.clock, showVoiceover: $showVoiceover, showSuggestions: $showSuggestions, take: take)
             TightenBar(model: model)
             StudioTimeline(model: model)
-            StudioProperties(model: model, startVoiceover: { showVoiceover = true })
+            if model.selection != .none {
+                StudioProperties(model: model, startVoiceover: { showVoiceover = true })
+            }
         }
         .overlay { if model.saveProgress != nil { savingOverlay } }
         .overlay(alignment: .top) { notice }
@@ -112,10 +115,14 @@ struct StudioView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Studio").font(.headline)
-                Text("Your original is never changed. Save Copy makes a new recording.")
+                Text("Your original is never changed. File ▸ Save Copy makes a new recording.")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
+            Toggle(isOn: $showTranscript) { Label("Transcript", systemImage: "text.alignleft") }
+                .toggleStyle(.button).labelStyle(.iconOnly)
+                .help(showTranscript ? "Hide the transcript" : "Show the transcript, to cut the video by selecting lines")
+                .hoverLabel("Transcript", above: false)
             Button { model.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                 .labelStyle(.iconOnly).disabled(!model.canUndo).keyboardShortcut("z", modifiers: .command).help("Undo").hoverLabel("Undo", above: false)
             Button { model.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
@@ -125,12 +132,6 @@ struct StudioView: View {
                 .help("File size, audio, and exporting to a file")
                 .hoverLabel("Save Options", above: false)
                 .popover(isPresented: $showSaveOptions, arrowEdge: .bottom) { saveOptionsPanel }
-            Button { model.save(options: saveOptions) { close() } } label: { Label("Save Copy", systemImage: "square.and.arrow.down") }
-                .buttonStyle(TakeButtonStyle(color: .accentColor))
-                .disabled(!model.canSave(saveOptions))
-                .help(model.canSave(saveOptions)
-                    ? "Make a new recording in your library. The original stays as it is."
-                    : "Make an edit, or choose a smaller file size, first")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -226,8 +227,8 @@ private struct Transport: View {
     @State private var showCamera = false
     @State private var showZoom = false
     @State private var showMarks = false
+    @State private var showSensitiveScan = false
     @AppStorage("autoZoomAmount") private var zoomAmount = 1.8
-    @AppStorage("tightenPause") private var pauseSeconds = 2.0
     @State private var fromPlayhead = false
     @State private var replaceOriginal = true
 
@@ -253,7 +254,6 @@ private struct Transport: View {
                 model.splice()
             }
             .fixedSize()
-            .keyboardShortcut("b", modifiers: .command)
             .help("Break the track you have selected at the playhead (S or ⌘B): the Audio track, or a text, zoom, music or voiceover clip. With nothing selected it breaks every track, video and sound together. The arrow beside it picks the video or the audio alone, and the button then keeps that choice. [ and ] drop everything before or after the playhead.")
             .disabled(!model.ready)
 
@@ -318,6 +318,7 @@ private struct Transport: View {
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
                 .hoverLabel(iconOnly ? "Mark" : nil)
                 .popover(isPresented: $showMarks, arrowEdge: .top) { markOptions }
+                .sheet(isPresented: $showSensitiveScan) { SensitiveScanSheet(model: model, job: model.sensitiveScan) }
             Button { model.chooseMusic() } label: { Label("Add Music", systemImage: "music.note") }
                 .help("Choose a song to play under the video. You can also drop an audio file on the timeline.")
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
@@ -328,48 +329,30 @@ private struct Transport: View {
                 .hoverLabel(iconOnly ? "Voiceover" : nil)
                 .popover(isPresented: $showVoiceover, arrowEdge: .top) { voiceoverOptions }
             Button { showSuggestions = true } label: { Label("Tighten", systemImage: "wand.and.stars") }
-                .help("Find long pauses and restarts you may want to cut")
+                .help("Find long pauses, restarts and filler words you may want to cut")
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
                 .hoverLabel(iconOnly ? "Tighten" : nil, anchor: .trailing)
                 .popover(isPresented: $showSuggestions, arrowEdge: .top) { tightenPanel }
         }
     }
 
-    /// Finds pauses and restarts. They then sit on the Video track for you to cut one by one, or all the pauses at once.
+    /// One button: cuts the long pauses and filler words in one undoable step.
     private var tightenPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Tighten").font(.headline)
-            Text("Finds long pauses and places where you said something twice. They show on the Video track, and nothing is cut until you choose it.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Pauses longer than").font(.caption).foregroundStyle(.secondary)
-                Picker("Pauses longer than", selection: $pauseSeconds) {
-                    Text("1 s").tag(1.0)
-                    Text("2 s").tag(2.0)
-                    Text("3 s").tag(3.0)
-                }
-                .pickerStyle(.segmented).labelsHidden()
-                .help("Pauses shorter than this are left alone. A little breathing room stays at each end of a pause you cut.")
-            }
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Button(model.tightenSearched ? "Find Again" : "Find Pauses and Restarts") {
-                    model.findTighten(pauseLength: pauseSeconds) { found in if found > 0 { showSuggestions = false } }
-                }
-                .disabled(model.tightenStatus != nil)
+                Button("Tighten") { model.tightenAll() }
+                    .disabled(model.tightenStatus != nil)
                 if let status = model.tightenStatus {
                     ProgressView().controlSize(.small)
                     Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            if model.tightenSearched, model.pendingTighten.isEmpty, model.tightenStatus == nil {
-                Label("Nothing to tighten. No long pauses or repeated sentences were found.", systemImage: "checkmark.circle")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Removes long pauses and filler words").font(.callout).foregroundStyle(.secondary)
             ForEach(model.tightenNotes, id: \.self) {
                 Text($0).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(16).frame(width: 340)
+        .padding(16).frame(width: 300)
     }
 
     private var backgroundOptions: some View {
@@ -520,6 +503,8 @@ private struct Transport: View {
                         .help(kind == .blur ? "Blur out a region, such as a name or an email address" : "Add a \(kind.title.lowercased())")
                 }
             }
+            Button { showMarks = false; showSensitiveScan = true } label: { Label("Find Sensitive Info…", systemImage: "eye.slash") }
+                .help("Look through the recording for email addresses, keys, card numbers and more, and choose which to blur")
             Divider()
             Toggle("Ring each click", isOn: Binding(
                 get: { model.project.clickHighlight != nil }, set: { model.setClickHighlightsOn($0) }))
@@ -653,8 +638,7 @@ struct StudioProperties: View {
     @ViewBuilder private var content: some View {
         switch model.selection {
         case .none:
-            Label("Click a clip to change it. To cut, move the playhead and Splice (S) to break every track, or select the Audio track first to break only the sound. Then click a part and press Delete.", systemImage: "hand.point.up.left")
-                .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            EmptyView()
         case .range(let range): rangeBar(range)
         case .text(let id):
             if let text = model.project.text(id) { textBar(text) }
@@ -991,17 +975,24 @@ private struct TightenBar: View {
         let pending = model.pendingTighten
         if !pending.isEmpty {
             let pauses = pending.filter { $0.kind == .silence }
-            let restarts = pending.count - pauses.count
+            let fillers = pending.filter { $0.kind == .filler }
+            let restarts = pending.count - pauses.count - fillers.count
             let pauseTime = pauses.reduce(0.0) { $0 + $1.span.length }
             HStack(spacing: 10) {
                 Image(systemName: "wand.and.stars").foregroundStyle(.orange)
-                Text(([pauses.isEmpty ? nil : plural(pauses.count, "pause"), restarts == 0 ? nil : plural(restarts, "restart")]
-                    .compactMap { $0 }.joined(separator: " and ")) + " to review. Hover one on the Video track to cut it or keep it.")
+                Text(ListFormatter.localizedString(byJoining: [
+                    pauses.isEmpty ? nil : plural(pauses.count, "pause"), restarts == 0 ? nil : plural(restarts, "restart"),
+                    fillers.isEmpty ? nil : plural(fillers.count, "filler word"),
+                ].compactMap { $0 }) + " to review. Hover one on the Video track to cut it or keep it.")
                     .font(.callout).lineLimit(1)
                 Spacer(minLength: 8)
                 if !pauses.isEmpty {
                     Button("Cut All Pauses (\(String(format: "%.1f", pauseTime)) s)") { model.cutTighten(pauses) }
                         .help("Cut every pause out in one step. Restarts are always cut one at a time. You can undo it.")
+                }
+                if !fillers.isEmpty {
+                    Button("Cut All Fillers (\(fillers.count))") { model.cutTighten(fillers) }
+                        .help("Cut every filler word out in one step. You can undo it.")
                 }
                 Button("Clear") { model.clearTighten() }
                     .help("Remove these suggestions from the timeline without cutting anything")

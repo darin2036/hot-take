@@ -1,55 +1,73 @@
 # Changelog
 
-All notable changes to Hot Take are listed here, newest first, in the style of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/). A build number is the commit count at the time the app was bundled; it is shown beside the version in About and What's New. See [docs/compatibility.md](docs/compatibility.md) for what has and has not been verified.
+All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/compatibility.md) for what has been verified.
 
-## [Unreleased]
-
-Builds 2 and later.
-
-### Current pull request: launch welcome
-
-- **Mac app:** redesigned the launch welcome with a midnight violet backdrop, flowing light trails around the flame icon, larger type and a visible skip hint. Reduce Motion shows a still composition.
+## 0.1.0 (build 2)
 
 ### Added
 
-- **Mac app:** shortcuts that work in any app: start/stop, pause, screenshot, and a take for an agent (⌃⌥⌘R, P, S and A by default, changeable in Settings).
-- **Mac app:** Quick Record starts the screen used last with your last settings, no sheet.
-- **Mac app:** screenshots of a screen, window or area, saved as PNG into the library folder.
-- **Mac app:** camera-only takes (camera and microphone, no screen).
-- **Mac app:** a floating speaker-notes window that is never in a recording, and an option to leave Notification Center out of captures.
-- **Mac app:** record for an agent. A **For an agent** checkbox beside Start recording (or **Quick Take for Agent** in the menu bar, or **For Agent** on a take's Watch page) turns a take into a request a coding agent can act on: what you said beside a picture of the screen at each click with a ring where you clicked, a full transcript, and, with on-device intelligence, a goal and steps read from your narration. It is saved as `PROMPT.md` and PNGs in a hidden folder beside the take and copied with full picture paths, ready to paste into Claude Code, Codex or Cursor. Made on this Mac; nothing is uploaded. Visited links and app names are not recorded.
-- **Mac app:** the Studio's **Mark** tool draws arrows, boxes and blurred regions, with handles to drag, and rings each click noted while recording. Marks follow the picture through a zoom or backdrop and ripple with cuts.
-- **Mac app:** join recordings into a new take (clicks carry over), import MP4, MOV and M4V videos (File ▸ Import Video, or drop them on the library), playback speed 0.5× to 2×, choose a take's thumbnail, save a GIF of a stretch, and save a picture at each click.
-- **Mac app:** chapters. They appear as headings inside the Transcript tab, are found on-device from the transcript's wording and pauses, and can be renamed, moved, added at any line or deleted. **Copy Timestamps** gives a `0:00 Title` list for a video description. The Studio's ruler shows them as markers, the Watch page has a **Chapters** menu to jump between them, and a saved copy keeps them, moved to where the same parts now begin. Chapters are kept in the take's `.json` (and travel in a `.hottake` file). On by default (Settings ▸ Processing ▸ **Find chapters in transcripts**).
-- **Mac app:** the Transcript tab has a **Translate** menu that translates on this Mac with the system's Translation framework (the first use of a language may ask the system to download it). **Save … Captions…** writes a `.vtt` in that language, and the Studio's Captions popover can draw captions in a translated language. Translations are dropped when the transcript is corrected or remade.
-- **Mac app:** each launch opens with an illuminated welcome, the logo and "What's your Hot Take?", then fades into the library. A click or key press skips it, Reduce Motion holds the artwork and words still, and it can be turned off in Settings ▸ Library.
-- **Mac app:** Edit ▸ Find in Transcript (⌘F, ⌘G, ⇧⌘G) tints matching lines. A line can be corrected from its context menu and saved with a check mark.
-- **Mac app:** Save Project in the Studio writes a `.hottake` file (recording, edit and audio in one file) that a teammate opens from File ▸ Open Hot Take File… or by double-click; see [docs/hottake-file.md](docs/hottake-file.md).
-- **Mac app:** the Studio autosaves your edit to a hidden draft beside the take and restores it when you reopen the take. **Save Copy** and **Discard Edits** remove it.
-- **Mac app:** Settings ▸ Recording has a microphone menu and the same Mic Mode row as the record sheet, with an **Open Mic Settings** button (the camera's is **Open Camera Settings**). While the record sheet or that pane is showing, Hot Take holds the microphone open without recording so the system's Mic Modes menu is available, and shows the mode macOS is really applying. The app can read the mode but only you can change it.
-- **Mac app:** Help ▸ What's New shows this change log.
+**Recording**
+- Countdown tones and an end-of-take chime, with a switch in Settings to turn recording sounds off.
+- Rewind while recording: goes back 10 seconds and pauses so you can say it again (Record ▸ Rewind 10 Seconds, or ⌃⌥⌘W). Not available on camera-only takes.
+- Shortcuts that work in any app: start/stop, pause, screenshot and a take for an agent (⌃⌥⌘R, P, S, A; changeable in Settings).
+- Quick Record starts the last screen with your last settings, no sheet.
+- Screenshots of a screen, window or area, saved as PNG in the library folder.
+- Camera-only takes.
+- Floating speaker-notes window that never appears in a recording, and an option to leave Notification Center out of captures.
+- Microphone menu and Mic Mode in Settings ▸ Recording, with buttons to open the Mic and Camera settings.
+
+**For agents and bug reports**
+- **For an agent** turns a take into a request for Claude Code, Codex or Cursor: your narration beside a picture of each click, a transcript and, with on-device intelligence, a goal and steps. Saved as `PROMPT.md` and copied ready to paste.
+- **Bug Report** on the Watch page drafts a ticket (title, summary, steps with pictures, expected and actual) to copy as Markdown, Jira, Slack or plain text.
+
+**Studio**
+- **Transcript** panel: select lines and press Delete to cut the video under them; **Bring Back** restores them.
+- **Tighten** removes long pauses and filler words ("um", "uh", "er", "ah", "hmm") in one undoable step. English only.
+- **Mark** tool: arrows, boxes and blurred regions, plus rings at each recorded click.
+- **Find Sensitive Info…** finds emails, phone numbers, addresses, card and ID numbers, keys, tokens, passwords and words you list, and lets you choose which to blur. Off until you start it; runs on this Mac.
+- Autosaved drafts, restored when you reopen the take.
+- Save Project writes a `.hottake` file (recording, edit and audio together) that teammates open from File ▸ Open Hot Take File… or by double-click. See [docs/hottake-file.md](docs/hottake-file.md).
+- Join recordings, import MP4/MOV/M4V (File ▸ Import Video or drop on the library), playback speed 0.5×–2×, choose a thumbnail, save a GIF of a stretch, and save a picture at each click.
+
+**Transcript, chapters and summaries**
+- Chapters are found on-device, shown as headings in the Transcript tab, and can be renamed, moved, added or deleted. **Copy Timestamps** gives a `0:00 Title` list. MP4 and MOV exports carry them (WebM does not yet).
+- **Translate** menu translates the transcript on this Mac; translated captions can be saved as `.vtt` or drawn in the Studio.
+- **Summarize** on the Transcript tab and **Summarize with AI** on the Watch page write a summary from the whole transcript, with Undo.
+- Find in Transcript (⌘F, ⌘G, ⇧⌘G) and line corrections from the context menu.
+
+**App**
+- Launch welcome with a flame-icon animation; click or press a key to skip. It can be turned off in Settings ▸ Library.
+- Help ▸ Hot Take Help (⌘?), a searchable help center, and Help ▸ What's New, which shows this change log.
+- File ▸ Export: video as MP4, MOV or WebM, and the transcript as Markdown.
+- Menu bar reorganized: File, View, and new Record, Take and Studio menus.
+- Resizable Info panel and Transcript divider (double-click resets; widths are remembered).
 
 ### Changed
 
-- **Mac app:** Share in the Studio sends the current edited version, not the original file.
-- **Mac app:** the separate Edit tab is gone; trimming and splicing happen in the Studio.
-- **Mac app:** Splice with the Audio track selected cuts the recording's sound on its own (Follow Video to undo); with nothing selected it still cuts video and sound together.
-- **Mac app:** captions in Chinese and Japanese wrap at a line length instead of running on as one line.
-- **Mac app:** **Help ▸ Hot Take Help** (⌘?) opens a searchable help center with a topic for each part of the app (recording, shortcuts, the library, the Studio, saving, permissions, troubleshooting). Its text is `mac/Resources/Help.md`, bundled into the app, and `AGENTS.md` now requires every user-visible change to update it and the change log.
-- **Mac app:** **Help ▸ What's New** shows this change log inside the app.
-- **Mac app:** each build is numbered by its commit count, because the system caches icons by bundle ID and version and a fixed version kept showing an old icon in Control Center. Signing requirements, and so permissions, do not include the version.
-- `mac/scripts/bundle.sh` clears stale Screen Recording, Microphone and Camera grants when the signing identity changes, uses the Apple Development certificate when there is one (`RELAYTAKE_SIGN_IDENTITY` overrides it), and falls back to an ad-hoc signature, with a warning that the Screen Recording grant will not survive rebuilds, when there is none.
+- Share in the Studio sends the edited version, not the original.
+- Save Copy moved to File ▸ Save Copy (⇧⌘S); it and Export use the Studio's Save Options.
+- The Edit tab is gone; trim and splice in the Studio.
+- Splice with the Audio track selected cuts sound only; with nothing selected it cuts both.
+- Transcript **Remake** is now **Regenerate**.
+- Info panel: file details are collapsed by default, with only **Show in Folder**.
+- Chinese and Japanese captions wrap at a line length.
+- Each build is numbered by its commit count so the system refreshes the app icon.
+- `mac/scripts/bundle.sh` signs with the Apple Development certificate when there is one, and otherwise ad-hoc with a warning that Screen Recording permission will not survive rebuilds. It clears stale permissions when the signing identity changes.
 
 ### Fixed
 
-- **Mac app:** fix: titles, summaries, tags, notes, the agent request and suggested cuts now use a whole long recording, not just its start (and end). The model reads it in pieces and the results are merged, on this Mac.
-- **Mac app:** the buttons above a recording on the Watch page (Chapters, speed, Pictures, For Agent, Info, Trash) no longer crowd or cut off their names; in a narrow window they shrink to icons, then move below the title.
-- **Mac app:** a recording whose picture ends before its audio no longer fails Save Copy, Share or Export with "No frame to draw on"; the last frame is held.
-- **Mac app:** the camera now starts before the screen, so the camera bubble is in the video from the first frame; the Studio trims the camera's early footage. If the screen fails to start, the camera is stopped and its file removed.
+- Titles, summaries, tags, notes, agent requests and suggested cuts now use a whole long recording, not just its start and end.
+- File ▸ Export works with a recording selected in the library or open in Watch or Transcript.
+- Splicing too close to an edge or another splice does nothing instead of showing a message.
+- Watch page buttons no longer crowd or cut off in narrow windows.
+- A recording whose picture ends before its audio no longer fails Save Copy, Share or Export.
+- The camera starts before the screen, so its bubble is in the first frame. If the screen fails to start, the camera is stopped and its file removed.
+- The Info panel saves only the fields you edited, so it no longer overwrites a newer summary.
+- Cutting several overlapping Tighten suggestions at once no longer cuts too much.
+- The Info button on the Watch page uses the standard ⓘ icon.
+- Removed the hint line along the bottom of the Studio.
 
-## [0.1.0] - 2026-10-22
-
-First public source release (build 1).
+## 0.1.0 (build 1) - 2026-10-22
 
 ### Added
 

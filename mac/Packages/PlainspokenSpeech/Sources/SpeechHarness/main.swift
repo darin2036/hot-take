@@ -11,6 +11,7 @@ import PlainspokenSpeech
 //     --out PATH                  write the transcript text to a file
 //     --json PATH                 write segments (text, start, end) as JSON
 //     --show                      also print the transcript text and segments
+//     --words                     with --show, also print each word and its timing
 //   speech-harness --locales [--engine speech|dictation]
 //
 // Without --show only counts and timings are printed, so a private recording is not echoed to a terminal.
@@ -24,6 +25,7 @@ var vocabulary: [String] = []
 var out: String?
 var jsonOut: String?
 var show = false
+var showWords = false
 var listLocales = false
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -53,8 +55,9 @@ while !args.isEmpty {
     case "--out": out = value()
     case "--json": jsonOut = value()
     case "--show": show = true
+    case "--words": showWords = true
     case "--locales": listLocales = true
-    case "-h", "--help": fail("usage: speech-harness FILE [--engine speech|dictation] [--locale en_US] [--vocab ...] [--vocab-file PATH] [--out PATH] [--json PATH] [--show] | --locales")
+    case "-h", "--help": fail("usage: speech-harness FILE [--engine speech|dictation] [--locale en_US] [--vocab ...] [--vocab-file PATH] [--out PATH] [--json PATH] [--show] [--words] | --locales")
     default:
         if arg.hasPrefix("--") { fail("unknown option \(arg)") }
         path = arg
@@ -98,7 +101,10 @@ do {
     }
     if show {
         print("\ntranscript: \(transcript.text)")
-        for s in transcript.segments { print(String(format: "  [%.2f-%.2f] ", s.start, s.end) + s.text) }
+        for s in transcript.segments {
+            print(String(format: "  [%.2f-%.2f] ", s.start, s.end) + s.text)
+            if showWords { for w in s.words { print(String(format: "      %.2f-%.2f  ", w.start, w.end) + w.text) } }
+        }
     }
 } catch {
     FileHandle.standardError.write(Data("failed: \(error)\n".utf8))

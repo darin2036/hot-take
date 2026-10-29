@@ -73,7 +73,10 @@ final class StudioModel: ObservableObject {
 
     /// Where each chapter falls in the edited video: the same positions a saved copy will carry, so a chapter whose
     /// opening is cut starts where its remaining footage does and one cut away entirely is not here.
-    var chapterMarkers: [Chapter] { ChapterList.remapped(sourceChapters, through: project.cuts) }
+    var chapterMarkers: [Chapter] { markers(for: project) }
+
+    /// The same positions for another version of the edit, such as the one a copy or export is made from.
+    func markers(for version: StudioProject) -> [Chapter] { ChapterList.remapped(sourceChapters, through: version.cuts) }
 
     private var history = UndoStack<StudioProject>()
     private var gestureBase: StudioProject?
@@ -99,6 +102,7 @@ final class StudioModel: ObservableObject {
         self.library = library
         let notes = TakeLibrary.metadata(for: take.files)
         sourceChapters = (notes?.chaptersEnabled ?? Pref.chaptersByDefault) ? notes?.chapters ?? [] : []
+        transcriptLines = notes?.transcript ?? []
         // A take recorded with a camera has its camera drawn in already; the Studio goes back to the originals so
         // the camera can be moved, resized or hidden.
         let hasOriginals = FileManager.default.fileExists(atPath: take.files.screenOriginal.path)
@@ -301,6 +305,27 @@ final class StudioModel: ObservableObject {
         edit(coalescing: key) { $0.updateShape(id, change) }
     }
 
+    /// Finds sensitive text in the recording for the person to review. Never runs on its own.
+    let sensitiveScan = SensitiveScanJob()
+
+    func scanForSensitiveInfo(terms: [String]) {
+        guard ready, let url = (sourceAsset as? AVURLAsset)?.url else { return }
+        sensitiveScan.run(url: url, duration: project.cuts.duration, terms: terms)
+    }
+
+    /// The blur marks a finding would become on the edited timeline (none if it is all cut out).
+    func sensitiveBlurs(for finding: SensitiveFinding) -> [ShapeOverlay] {
+        SensitiveScan.blurs(for: finding, cuts: project.cuts)
+    }
+
+    /// Adds the kept findings as ordinary blurs, in one undoable step.
+    func addSensitiveBlurs(_ findings: [SensitiveFinding]) {
+        let blurs = findings.flatMap { sensitiveBlurs(for: $0) }
+        guard !blurs.isEmpty else { return }
+        edit { $0.shapes += blurs }
+        info = "Added \(blurs.count) blur\(blurs.count == 1 ? "" : "s"). Each is on the Marks track to move, resize or delete."
+    }
+
     /// Rings at each recorded click, on or off.
     func setClickHighlightsOn(_ on: Bool) {
         guard ready else { return }
@@ -335,6 +360,7 @@ final class StudioModel: ObservableObject {
             do {
                 let cues = try await Transcripts.ensure(for: take) { [weak self] text in self?.captionStatus = text }
                 if cues.isEmpty { message = "No speech was found to caption."; return }
+                transcriptLines = cues
                 edit { $0.captions = StudioCaptions(cues: cues) }
                 library.refresh()
             } catch { message = "Could not make captions: \(error.localizedDescription)" }
@@ -551,17 +577,11 @@ final class StudioModel: ObservableObject {
             case .audio: done = project.spliceOriginalAudio(at: self.time)
             }
         }
-        if done {
-            selection = target == .audio ? .original : .none
-        } else {
-            info = target == .audio
-                ? "Move the playhead inside a part of the audio, away from its edges and other splices, to splice it."
-                : "Move the playhead away from the edges (and from other splices) to splice."
-        }
+        if done { selection = target == .audio ? .original : .none }
     }
 
     /// Splits the selected text, zoom or audio clip at the playhead. Returns true when something was selected
-    /// that can be split (even if the playhead was in the wrong place, which is explained), false otherwise.
+    /// that can be split (even if the playhead was in the wrong place, when nothing happens), false otherwise.
     private func splitSelectedItem() -> Bool {
         let at = time
         var later: UUID?
@@ -576,7 +596,6 @@ final class StudioModel: ObservableObject {
             if let later { selection = .clip(later) }
         default: return false
         }
-        if later == nil { info = "Move the playhead inside the selected item, away from its ends, to split it." }
         return true
     }
 
@@ -658,6 +677,7 @@ final class StudioModel: ObservableObject {
         case .clip(let id): edit { $0.removeClip(id) }
         case .audioPart(let id): edit { $0.removeOriginalAudioPart(id) }
         case .range(let range): removeSection(range)
+        case .none where !selectedLines.isEmpty: cutLines(selectedLines)
         default: return
         }
         selection = .none
@@ -675,13 +695,84 @@ final class StudioModel: ObservableObject {
         selection = .original
     }
 
-    /// Applies cuts suggested from the *original* recording by mapping them onto the edited timeline.
+    /// Applies cuts suggested from the *original* recording by mapping them onto the edited timeline. Overlapping spans
+    /// are joined first, so no stretch is removed twice.
     func applySourceCuts(_ spans: [TimeSpan]) {
+        let joined = EditSuggestions.merge(spans.sorted { $0.start < $1.start })
         edit { project in
-            let outputs = spans.flatMap { project.cuts.outputSpans(forSource: $0) }
+            let outputs = joined.flatMap { project.cuts.outputSpans(forSource: $0) }
             for span in outputs.sorted(by: { $0.start > $1.start }) { try project.remove(span) }
         }
     }
+
+    // MARK: Transcript
+
+    /// The take's transcript lines, at their times in the original. Choosing lines and cutting them edits the video.
+    @Published private(set) var transcriptLines: [CaptionSegment] = []
+    @Published private(set) var transcriptStatus: String?
+    /// Lines chosen in the Transcript panel, by index into `transcriptLines`.
+    @Published var selectedLines: Set<Int> = []
+
+    func loadTranscript() {
+        transcriptLines = TakeLibrary.metadata(for: take.files)?.transcript ?? []
+        selectedLines = selectedLines.filter { transcriptLines.indices.contains($0) }
+    }
+
+    /// Makes the transcript on this Mac (saved with the take) when there is none yet.
+    func makeTranscript() {
+        guard transcriptStatus == nil else { return }
+        transcriptStatus = "Starting…"
+        Task {
+            defer { transcriptStatus = nil }
+            do {
+                transcriptLines = try await Transcripts.ensure(for: take) { [weak self] in self?.transcriptStatus = $0 }
+                if transcriptLines.isEmpty { message = "No speech was found in this recording." }
+                library.refresh()
+            } catch { message = "Could not make the transcript: \(error.localizedDescription)" }
+        }
+    }
+
+    func lineState(_ index: Int) -> TranscriptCuts.LineState {
+        transcriptLines.indices.contains(index) ? TranscriptCuts.state(of: transcriptLines[index], in: project.cuts) : .kept
+    }
+
+    /// Cuts the lines' stretches of the original out of the edit, as one undoable step.
+    func cutLines(_ indices: Set<Int>) {
+        let lines = indices.sorted().filter { transcriptLines.indices.contains($0) }.map { transcriptLines[$0] }
+        guard !lines.isEmpty else { return }
+        selection = .none
+        applySourceCuts(TranscriptCuts.spans(of: lines))
+    }
+
+    /// Brings back whatever of the lines was cut, in its place, as one undoable step.
+    func restoreLines(_ indices: Set<Int>) {
+        let lines = indices.sorted().filter { transcriptLines.indices.contains($0) }.map { transcriptLines[$0] }
+        guard !lines.isEmpty else { return }
+        edit { project in
+            for span in TranscriptCuts.spans(of: lines) { project.restore(source: span) }
+        }
+    }
+
+    /// Chooses a line the way a list does: a click picks it alone, Shift extends from the last one picked, and Command
+    /// adds or removes it. A plain click also moves the playhead to the line (if any of it is still in the edit).
+    func clickLine(_ index: Int, shift: Bool, command: Bool) {
+        guard transcriptLines.indices.contains(index) else { return }
+        selection = .none
+        if command {
+            if selectedLines.contains(index) { selectedLines.remove(index) } else { selectedLines.insert(index) }
+            lineAnchor = index
+        } else if shift, let anchor = lineAnchor {
+            selectedLines = Set(min(anchor, index)...max(anchor, index))
+        } else {
+            selectedLines = [index]
+            lineAnchor = index
+            let line = transcriptLines[index]
+            if let start = project.cuts.outputSpans(forSource: TimeSpan(start: line.start, end: line.end)).first?.start {
+                seek(to: start)
+            }
+        }
+    }
+    private var lineAnchor: Int?
 
     // MARK: Tighten
 
@@ -698,18 +789,47 @@ final class StudioModel: ObservableObject {
     /// Where a proposal sits on the edited timeline (it may be split if part of it was already cut).
     func tightenSpans(for suggestion: EditSuggestion) -> [TimeSpan] { project.cuts.outputSpans(forSource: suggestion.span) }
 
-    /// Looks for pauses at least `pauseLength` seconds long and for restarts. Calls `done` with how many it found.
-    func findTighten(pauseLength: Double, done: @escaping (Int) -> Void = { _ in }) {
+    /// Looks for pauses at least `pauseLength` seconds long and for restarts, and for filler words if `fillers`. Calls
+    /// `done` with how many it found.
+    func findTighten(pauseLength: Double, fillers: Bool = false, done: @escaping (Int) -> Void = { _ in }) {
         guard tightenStatus == nil else { return }
         tightenStatus = "Starting…"
         tightenNotes = []
         Task {
-            let result = await EditAnalysis.run(for: take, pauseLength: pauseLength) { [weak self] in self?.tightenStatus = $0 }
+            let result = await EditAnalysis.run(for: take, pauseLength: pauseLength, fillers: fillers) { [weak self] in
+                self?.tightenStatus = $0
+            }
             tighten = result.suggestions
             tightenNotes = result.notes
             tightenSearched = true
             tightenStatus = nil
+            loadTranscript()  // finding restarts makes the transcript if there was none
             done(pendingTighten.count)
+        }
+    }
+
+    /// Cuts every long pause (2 seconds or more) and every filler word ("um", "uh", ...) in one step, which can be
+    /// undone. Restarts are not touched, since they need a judgement call. Reports what was removed in `tightenNotes`.
+    func tightenAll() {
+        guard tightenStatus == nil else { return }
+        tightenStatus = "Starting…"
+        tightenNotes = []
+        Task {
+            defer { tightenStatus = nil }
+            let result = await EditAnalysis.run(for: take, pauseLength: 2, fillers: true, restarts: false) { [weak self] in
+                self?.tightenStatus = $0
+            }
+            let found = result.suggestions.filter { ($0.kind == .silence || $0.kind == .filler) && !tightenSpans(for: $0).isEmpty }
+            loadTranscript()  // finding pauses makes the transcript if there was none
+            guard !found.isEmpty else {
+                tightenNotes = ["Nothing to tighten."] + result.notes
+                return
+            }
+            cutTighten(found)
+            let pauses = found.filter { $0.kind == .silence }.count, fillers = found.count - pauses
+            let parts = [pauses == 0 ? nil : (pauses == 1 ? "1 pause" : "\(pauses) pauses"),
+                         fillers == 0 ? nil : (fillers == 1 ? "1 filler word" : "\(fillers) filler words")].compactMap { $0 }
+            tightenNotes = ["Removed " + parts.joined(separator: " and ") + ". You can undo it."] + result.notes
         }
     }
 
@@ -728,6 +848,7 @@ final class StudioModel: ObservableObject {
 
     func select(_ new: Selection) {
         selection = new
+        if new != .none { selectedLines = [] }
         // Make what you just picked visible in the preview.
         switch new {
         case .text(let id): if let text = project.text(id) { seek(to: text.start + 0.05) }
@@ -915,7 +1036,8 @@ final class StudioModel: ObservableObject {
             defer { saveProgress = nil; saveTask = nil }
             do {
                 try await StudioSaver.render(
-                    asset: asset, project: snapshot, to: copy.video, format: .mp4, options: options
+                    asset: asset, project: snapshot, to: copy.video, format: .mp4, options: options,
+                    chapters: markers(for: snapshot)
                 ) { self.saveProgress = $0 }
                 try Task.checkCancellation()
                 var notes: [String] = []
@@ -985,9 +1107,9 @@ final class StudioModel: ObservableObject {
         saveTask = Task {
             defer { saveProgress = nil; saveTask = nil }
             do {
-                try await StudioSaver.render(asset: asset, project: snapshot, to: url, format: format, options: options) {
-                    self.saveProgress = $0
-                }
+                try await StudioSaver.render(
+                    asset: asset, project: snapshot, to: url, format: format, options: options, chapters: markers(for: snapshot)
+                ) { self.saveProgress = $0 }
                 info = "Exported “\(url.lastPathComponent)”."
             } catch is CancellationError {
                 info = "Export canceled."
@@ -1008,7 +1130,9 @@ final class StudioModel: ObservableObject {
         saveProgress = 0
         saveStatus = "Preparing to share…"
         defer { saveProgress = nil }
-        try await StudioSaver.render(asset: asset, project: project, to: file, format: .mp4, options: StudioSaveOptions()) {
+        try await StudioSaver.render(
+            asset: asset, project: project, to: file, format: .mp4, options: StudioSaveOptions(), chapters: chapterMarkers
+        ) {
             self.saveProgress = $0
         }
         return file

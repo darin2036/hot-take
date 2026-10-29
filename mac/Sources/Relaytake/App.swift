@@ -25,6 +25,8 @@ final class RecorderModel: ObservableObject {
     /// Good news to show for a while (a saved screenshot), and the file it is about.
     @Published var notice = ""
     @Published var noticeFile: URL?
+    /// The bug report being reviewed, shown as a sheet over the library.
+    @Published var bugReportSession: BugReportSession?
 
     /// The one recorder the app runs, for library tools that report through its status banner.
     private(set) static weak var current: RecorderModel?
@@ -55,6 +57,12 @@ final class RecorderModel: ObservableObject {
     private var pausedAt: Date?
     private var pausedTotal: TimeInterval = 0
     private var pausedPlacement: CameraPlacement?
+    /// The number the next piece of the take is given. It only counts up, so a rewind never reuses a number.
+    private var nextPiece = 1
+    /// True while the end of the take is being cut off for a rewind.
+    @Published private(set) var rewinding = false
+    /// How far Rewind goes back, in seconds.
+    nonisolated static let rewindSeconds = 10.0
     /// The end of a pause or resume that is still stopping or starting the capture.
     private var transition: Task<Void, Never>?
 
@@ -117,6 +125,8 @@ final class RecorderModel: ObservableObject {
             if isRecording { toggle() } else { quickRecordForAgent() }
         case .pause:
             if isRecording, canPause { paused ? resume() : pause() }
+        case .rewind:
+            rewind()
         case .screenshot:
             quickScreenshot()
         }
@@ -339,6 +349,7 @@ final class RecorderModel: ObservableObject {
             takeStart = recorder.startedAt ?? Date()
             screenPieces = [files.video]
             cameraPieces = []
+            nextPiece = 1
             pausedTotal = 0
             pausedAt = nil
             paused = false
@@ -407,18 +418,88 @@ final class RecorderModel: ObservableObject {
         let previous = transition
         transition = Task {
             await previous?.value
-            _ = try? await recorder.stop()
-            if options.useCamera { cameraFinishedCleanly = await camera.finish(keepRunning: true) }
+            await endPiece(options)
         }
+    }
+
+    private func endPiece(_ options: TakeOptions) async {
+        _ = try? await recorder.stop()
+        if options.useCamera { cameraFinishedCleanly = await camera.finish(keepRunning: true) }
+    }
+
+    /// Whether Rewind can be used now: a take that can be paused, long enough to go back in, and not already rewinding.
+    var canRewind: Bool { isRecording && canPause && !rewinding && !restarting }
+
+    /// Goes back `seconds` in the take and pauses there. The footage after that point is thrown away, so you can say it
+    /// again: Resume carries on from the new end. Each pause already ends a piece of the take, so this ends the piece being
+    /// recorded, then drops whole pieces from the end and cuts the one it lands in. Clicks after that point go too.
+    func rewind(seconds: Double = RecorderModel.rewindSeconds) {
+        guard canRewind, let options = takeOptions else { return }
+        rewinding = true
+        if !paused {
+            paused = true
+            pausedAt = Date()
+            clickRecorder.stop()
+        }
+        let previous = transition
+        transition = Task {
+            await previous?.value
+            // A resume that was still starting when Rewind was pressed has finished by now, so end its piece too.
+            if !paused { paused = true; pausedAt = Date(); clickRecorder.stop(); await endPiece(options) }
+            await cutBack(by: seconds)
+            rewinding = false
+        }
+    }
+
+    /// Cuts the screen and camera pieces back to the take's length minus `seconds`.
+    private func cutBack(by seconds: Double) async {
+        var screenLengths: [Double] = []
+        for piece in screenPieces { screenLengths.append(await SegmentJoiner.length(of: piece)) }
+        guard let keep = RewindPlan.keepTime(total: screenLengths.reduce(0, +), rewind: seconds),
+              let plan = RewindPlan.make(durations: screenLengths, keep: keep) else {
+            message = "There is not enough recorded yet to rewind."
+            return
+        }
+        do {
+            if let length = plan.lastLength {
+                try await SegmentJoiner.trim(screenPieces[plan.keptPieces - 1], to: length, as: .mp4)
+            }
+        } catch {
+            message = "Could not rewind: \(error.localizedDescription)"
+            return
+        }
+        for piece in screenPieces[plan.keptPieces...] { try? FileManager.default.removeItem(at: piece) }
+        screenPieces.removeLast(screenPieces.count - plan.keptPieces)
+
+        // The camera started a little before the screen did, so it keeps that much more.
+        if !cameraPieces.isEmpty {
+            var cameraLengths: [Double] = []
+            for piece in cameraPieces { cameraLengths.append(await SegmentJoiner.length(of: piece)) }
+            if let cameraPlan = RewindPlan.make(durations: cameraLengths, keep: keep + (cameraOffset ?? 0)) {
+                do {
+                    if let length = cameraPlan.lastLength {
+                        try await SegmentJoiner.trim(cameraPieces[cameraPlan.keptPieces - 1], to: length, as: .mov)
+                    }
+                    for piece in cameraPieces[cameraPlan.keptPieces...] { try? FileManager.default.removeItem(at: piece) }
+                    cameraPieces.removeLast(cameraPieces.count - cameraPlan.keptPieces)
+                } catch {
+                    message = "The screen was rewound but the camera could not be, so it may be a little out of step: \(error.localizedDescription)"
+                }
+            }
+        }
+        // The timer and the click timings go back with the footage.
+        if let stoppedAt = pausedAt { pausedTotal += max(0, elapsed(at: stoppedAt) - keep) }
+        clickRecorder.drop(after: keep)
     }
 
     /// Starts the next piece of the take, with the time paused left out.
     func resume() {
         guard paused, let options = takeOptions, let current, let stoppedAt = pausedAt else { return }
-        let number = screenPieces.count
         let previous = transition
         transition = Task {
             await previous?.value
+            let number = nextPiece
+            nextPiece += 1
             let video = current.files.pieceURL(number: number, extension: "mp4")
             do {
                 let resumedAt = Date()
@@ -535,6 +616,7 @@ final class RecorderModel: ObservableObject {
         RecordingPanel.shared.hide()
         let micFile = await take.microphone?.stop()
         let cameraFinished = await camera.finish()
+        RecordingSounds.shared.play(.ended)
         cameraOnly = nil
         current = nil
         func cleanUp() {
@@ -613,6 +695,7 @@ final class RecorderModel: ObservableObject {
         lap("screen recording closed")
         let placement = SelfViewPanel.shared.placement() ?? pausedPlacement
         if !wasPaused, takeOptions?.useCamera == true { cameraFinishedCleanly = await camera.finish() }
+        RecordingSounds.shared.play(.ended)
         SelfViewPanel.shared.hide()
         var cameraRecorded = cameraOffset != nil && cameraFinishedCleanly
         if cameraOffset != nil, !cameraRecorded {
@@ -1013,7 +1096,7 @@ struct RelaytakeApp: App {
         }
         // `Hot Take --welcome-snapshot out.png [seconds] [--reduce-motion]` draws the first-launch welcome at that moment to a PNG.
         if let flag = args.firstIndex(of: "--welcome-snapshot"), args.count > flag + 1 {
-            let seconds = args.count > flag + 2 ? Double(args[flag + 2]) ?? 3.5 : 3.5
+            let seconds = args.count > flag + 2 ? Double(args[flag + 2]) ?? 1.8 : 1.8
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
                 let host = NSHostingView(rootView: WelcomeScene(elapsed: seconds, animated: !args.contains("--reduce-motion")).frame(width: 1000, height: 680))
@@ -1164,6 +1247,23 @@ struct RelaytakeApp: App {
                 }
             }
         }
+        // `Hot Take --trim-check out.mp4 in.mp4 SECONDS` copies a piece and cuts it short, the way a rewind does, and prints the length.
+        if let flag = args.firstIndex(of: "--trim-check"), args.count > flag + 3, let seconds = Double(args[flag + 3]) {
+            Task { @MainActor in
+                let out = URL(fileURLWithPath: args[flag + 1])
+                do {
+                    try? FileManager.default.removeItem(at: out)
+                    try FileManager.default.copyItem(at: URL(fileURLWithPath: args[flag + 2]), to: out)
+                    try await SegmentJoiner.trim(out, to: seconds, as: .mp4)
+                    let asset = AVURLAsset(url: out)
+                    print("trimmed to \(try await asset.load(.duration).seconds) s, video tracks \(try await asset.loadTracks(withMediaType: .video).count), audio tracks \(try await asset.loadTracks(withMediaType: .audio).count)")
+                    exit(0)
+                } catch {
+                    print("trim failed: \(error)")
+                    exit(1)
+                }
+            }
+        }
         // `Hot Take --splice-check Take.mp4` splices, slides, trims and undoes through the Studio's own model.
         if let flag = args.firstIndex(of: "--splice-check"), args.count > flag + 1 {
             Task { @MainActor in
@@ -1283,6 +1383,10 @@ struct RelaytakeApp: App {
         Window("Hot Take Help", id: "help") {
             HelpView()
         }
-        .commands { AboutCommands(); HelpCommands(); TranscriptFindCommands(); SharedProjectCommands(); ImportCommands() }
+        .commands {
+            AboutCommands(); HelpCommands(); TranscriptFindCommands()
+            FileCommands(recorder: model); RecordCommands(recorder: model); TakeCommands(recorder: model)
+            StudioCommands(); ViewCommands()
+        }
     }
 }

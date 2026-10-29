@@ -10,7 +10,7 @@ final class RecordingCountdown: ObservableObject {
 
     func run(on screens: [NSScreen]) async -> Bool {
         guard !screens.isEmpty else { return false }
-        defer { panels.forEach { $0.orderOut(nil) }; panels = [] }
+        defer { RecordingSounds.shared.stop(); panels.forEach { $0.orderOut(nil) }; panels = [] }
         for screen in screens {
             let panel = CountdownPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             panel.level = .screenSaver
@@ -26,7 +26,9 @@ final class RecordingCountdown: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         panels.first?.makeKey()
         for value in [3, 2, 1] {
+            if canceled || Task.isCancelled { return false }
             number = value
+            RecordingSounds.shared.play(value == 1 ? .lastCount : .count)
             let deadline = ContinuousClock.now.advanced(by: .seconds(1))
             while ContinuousClock.now < deadline {
                 if canceled || Task.isCancelled { return false }
@@ -36,7 +38,7 @@ final class RecordingCountdown: ObservableObject {
         return !canceled && !Task.isCancelled
     }
 
-    func cancel() { canceled = true }
+    func cancel() { canceled = true; RecordingSounds.shared.stop() }
 }
 
 private final class CountdownPanel: NSPanel {

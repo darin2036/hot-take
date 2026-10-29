@@ -1,6 +1,7 @@
 import Foundation
 
-public struct TranscriptSegment: Sendable, Equatable {
+/// One word (or a word with its punctuation, "um,") as the recognizer heard it, with the time it covers.
+public struct TranscriptWord: Sendable, Equatable {
     public var text: String
     /// Seconds from the start of the recording.
     public var start: Double
@@ -10,6 +11,23 @@ public struct TranscriptSegment: Sendable, Equatable {
         self.text = text
         self.start = start
         self.end = end
+    }
+}
+
+public struct TranscriptSegment: Sendable, Equatable {
+    public var text: String
+    /// Seconds from the start of the recording.
+    public var start: Double
+    public var end: Double
+    /// The words as heard, before vocabulary corrections, each with its own timing. Empty when the recognizer
+    /// gave no timing for them.
+    public var words: [TranscriptWord]
+
+    public init(text: String, start: Double, end: Double, words: [TranscriptWord] = []) {
+        self.text = text
+        self.start = start
+        self.end = end
+        self.words = words
     }
 }
 

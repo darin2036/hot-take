@@ -91,6 +91,15 @@ private struct RecordingBar: View {
                     }
                     .buttonStyle(.plain)
                     .help(model.paused ? "Carry on with this take" : "Pause. Paused time is left out of the take.")
+
+                    Button {
+                        model.rewind()
+                    } label: {
+                        Label("Rewind", systemImage: "gobackward.10")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.canRewind)
+                    .help("Go back 10 seconds and pause there, so you can say it again. Press Resume to carry on.")
                 }
 
                 Button {

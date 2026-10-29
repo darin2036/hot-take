@@ -310,6 +310,15 @@ public struct StudioProject: Equatable, Sendable {
         self = copy
     }
 
+    /// Brings back footage of the original in `source` (seconds of the original) that was cut, in its place.
+    /// Text, zooms and voiceover after it move later to stay with their picture. Returns false if nothing was cut there.
+    @discardableResult
+    public mutating func restore(source: TimeSpan) -> Bool {
+        let pieces = cuts.restore(source)
+        for piece in pieces { ripple(inserting: piece.length, at: piece.at) }
+        return !pieces.isEmpty
+    }
+
     // MARK: Splices and edges
 
     /// Puts a break in the video at `time` of the edited timeline. Nothing is removed.

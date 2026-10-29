@@ -50,6 +50,11 @@ final class ClickRecorder {
         }) { monitors.append(local) }
     }
 
+    /// Forgets clicks after `time` seconds, for footage that was rewound over.
+    func drop(after time: Double) {
+        clicks.removeAll { $0.time > time }
+    }
+
     /// Stops listening and returns the clicks, oldest first.
     @discardableResult
     func stop() -> [ClickEvent] {

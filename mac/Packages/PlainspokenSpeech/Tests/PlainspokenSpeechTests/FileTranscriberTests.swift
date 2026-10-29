@@ -82,6 +82,23 @@ private enum Speech {
         #expect(transcript.segments.map(\.text).joined(separator: " ") == transcript.text)
     }
 
+    /// Relaytake finds "um" and "uh" to cut from these. This uses the Mac's voice, so it shows the timings come through,
+    /// not how well real hesitations are heard.
+    @Test func everyWordComesWithItsOwnTimingFillersIncluded() async throws {
+        try #require(await Speech.ready, "the English speech model is not installed")
+        let file = try Speech.say("So, um, today I want to show you the new export button.")
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let transcript = try await FileTranscriber.transcribe(fileAt: file, locale: Locale(identifier: "en_US"))
+        let words = transcript.segments.flatMap(\.words)
+        #expect(words.count >= 10, "heard: \(transcript.text)")
+        #expect(zip(words, words.dropFirst()).allSatisfy { $0.start <= $1.start })
+        #expect(words.allSatisfy { $0.end > $0.start && !$0.text.contains(" ") })
+        let filler = words.first { $0.text.lowercased().hasPrefix("um") }
+        #expect(filler != nil, "heard: \(transcript.text)")
+        #expect((filler?.start ?? 0) > (words.first?.start ?? 0))
+    }
+
     @Test func appliesTheVocabularyToTheFinishedText() async throws {
         try #require(await Speech.ready, "the English speech model is not installed")
         let file = try Speech.say("Let's review the checkout page on Thursday.")

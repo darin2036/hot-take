@@ -89,6 +89,8 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
     /// Starts a recording of the screen with the last settings, or stops the one in progress.
     case startStop
     case pause
+    /// Goes back 10 seconds in the take being recorded and pauses there.
+    case rewind
     case screenshot
     /// Like `startStop`, and the take is also turned into a request for a coding agent when it stops.
     case startAgent
@@ -99,6 +101,7 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .startStop: "Start or stop recording"
         case .pause: "Pause or resume"
+        case .rewind: "Rewind 10 seconds while recording"
         case .screenshot: "Take a screenshot"
         case .startAgent: "Start or stop a take for an agent"
         }
@@ -111,6 +114,7 @@ public enum HotkeyAction: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .startStop: HotkeyBinding(keyCode: 15, modifiers: [.control, .option, .command])  // R
         case .pause: HotkeyBinding(keyCode: 35, modifiers: [.control, .option, .command])  // P
+        case .rewind: HotkeyBinding(keyCode: 13, modifiers: [.control, .option, .command])  // W
         case .screenshot: HotkeyBinding(keyCode: 1, modifiers: [.control, .option, .command])  // S
         case .startAgent: HotkeyBinding(keyCode: 0, modifiers: [.control, .option, .command])  // A
         }

@@ -68,6 +68,49 @@ enum Summarizer {
         return AgentPrompt.parse(response.content)
     }
 
+    /// The title, summary, expected and actual result a bug report's narration describes. Nil when the reply had
+    /// nothing usable. A long walkthrough is read in pieces, then the pieces' readings are merged.
+    static func bugReading(transcript: String) async throws -> BugReport.Reading? {
+        let pieces = TranscriptChunks.split(transcript)
+        guard pieces.count > 1 else { return try await bugReadingOne(transcript) }
+        var readings: [BugReport.Reading] = []
+        for piece in pieces {
+            try Task.checkCancellation()
+            if let reading = try await bugReadingOne(piece) { readings.append(reading) }
+        }
+        guard readings.count > 1 else { return readings.first }
+        let merged = BugReportPrompt.mergeText(readings)
+        if merged.count <= SummaryPrompt.maxCharacters, let reading = try await bugReadingOne(merged) { return reading }
+        return BugReportPrompt.combined(readings)
+    }
+
+    private static func bugReadingOne(_ transcript: String) async throws -> BugReport.Reading? {
+        let session = LanguageModelSession(instructions: BugReportPrompt.instructions)
+        let response = try await session.respond(
+            to: BugReportPrompt.prompt(transcript: transcript), options: GenerationOptions(temperature: 0.2))
+        return BugReportPrompt.parse(response.content)
+    }
+
+    /// One step to reproduce for each moment the person did something, by moment number from 1, in the model's
+    /// words from what was said around it. Moments are sent a batch at a time so a long take fits.
+    static func bugSteps(moments: [AgentBrief.Moment], transcript: [CaptionSegment]) async throws -> [Int: String] {
+        let said = AgentBrief.narration(for: moments, transcript: transcript)
+        let lines = moments.indices.map {
+            BugReportPrompt.stepLine(
+                number: $0 + 1, clicked: moments[$0].click != nil, narration: said[$0].map(\.text).joined(separator: " "))
+        }
+        var steps: [Int: String] = [:]
+        for batch in BugReportPrompt.stepBatches(lines) {
+            try Task.checkCancellation()
+            let session = LanguageModelSession(instructions: BugReportPrompt.stepInstructions)
+            let response = try await session.respond(
+                to: "Moments of a screen recording:\n\n" + lines[batch].joined(separator: "\n"),
+                options: GenerationOptions(temperature: 0.2))
+            steps.merge(BugReportPrompt.parseSteps(response.content)) { first, _ in first }
+        }
+        return steps
+    }
+
     /// The transcript itself when it fits the model; otherwise one summary line per piece, summarized again
     /// until the result fits. If the model returns nothing for a piece, that piece is left out of the digest.
     private static func digest(_ transcript: String) async throws -> String {

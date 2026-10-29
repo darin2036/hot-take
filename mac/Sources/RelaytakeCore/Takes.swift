@@ -41,6 +41,10 @@ public struct TakeFiles: Equatable, Sendable {
     public var agentDirectory: URL {
         directory.appendingPathComponent(".hot-take-agent", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
     }
+    /// The take turned into a bug report (`BUG-REPORT.md` and its pictures), out of sight beside it.
+    public var bugReportDirectory: URL {
+        directory.appendingPathComponent(".hot-take-bug-report", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
+    }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
 
@@ -95,13 +99,18 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
     /// Whether this recording's transcript shows chapters. Nil follows the app-wide default; set when the person turns
     /// them on or off for this recording (or removes every chapter). Turning them off keeps the saved chapters.
     public var chaptersEnabled: Bool?
+    /// Every word the recognizer heard, filler sounds included, each with its own timing. Used to find "um" and "uh"
+    /// to cut. Made by SpeechTranscriber, which keeps filler sounds (the classic dictation model drops them), so it
+    /// can differ from the transcript; it is never shown. Empty until it is first needed.
+    public var words: [TimedWord]
 
     public init(
         title: String, summary: String, created: Date, durationSeconds: Double? = nil,
         transcript: [CaptionSegment] = [], tags: [String] = [], notes: String = "",
         clicks: [ClickEvent] = [], captureKind: String? = nil, derivedFrom: String? = nil, cameraOffset: Double? = nil,
         cameraPlacement: CameraPlacement? = nil, thumbnailTime: Double? = nil,
-        translations: [String: [CaptionSegment]] = [:], chapters: [Chapter] = [], chaptersEnabled: Bool? = nil
+        translations: [String: [CaptionSegment]] = [:], chapters: [Chapter] = [], chaptersEnabled: Bool? = nil,
+        words: [TimedWord] = []
     ) {
         self.title = title
         self.summary = summary
@@ -119,6 +128,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         self.translations = translations
         self.chapters = chapters
         self.chaptersEnabled = chaptersEnabled
+        self.words = words
     }
 
     /// Older sidecars have no tags or notes; they decode with empty values.
@@ -140,6 +150,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         translations = try c.decodeIfPresent([String: [CaptionSegment]].self, forKey: .translations) ?? [:]
         chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? []
         chaptersEnabled = try c.decodeIfPresent(Bool.self, forKey: .chaptersEnabled)
+        words = try c.decodeIfPresent([TimedWord].self, forKey: .words) ?? []
     }
 
     /// Keeps what was seen while recording (clicks, what was captured) on a take whose metadata is being
@@ -151,6 +162,7 @@ public struct TakeMetadata: Codable, Equatable, Sendable {
         cameraOffset = existing.cameraOffset
         cameraPlacement = existing.cameraPlacement
         thumbnailTime = existing.thumbnailTime
+        words = existing.words
     }
 
     /// "demo, bug report,  Demo" → ["demo", "bug report"]: trimmed, de-duplicated ignoring case.

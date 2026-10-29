@@ -192,17 +192,45 @@ public enum AgentBrief {
         public var copyText: String
     }
 
+    /// The recording's length and the moments to take pictures at.
+    public struct Plan: Sendable {
+        public var duration: Double
+        public var moments: [Moment]
+    }
+
+    public static func plan(for files: TakeFiles, metadata: TakeMetadata) async throws -> Plan {
+        let duration = try await AVURLAsset(url: files.video).load(.duration).seconds
+        return Plan(duration: duration, moments: moments(clicks: metadata.clicks, transcript: metadata.transcript, duration: duration))
+    }
+
     /// Writes the request for `files` into its folder beside the take (replacing an earlier one): a picture at each
     /// moment and `PROMPT.md`. The folder appears only when complete.
     public static func write(
         for files: TakeFiles, metadata: TakeMetadata, request: Request?,
         fileManager: FileManager = .default, progress: @escaping @Sendable (Double) -> Void = { _ in }
     ) async throws -> Output {
-        let asset = AVURLAsset(url: files.video)
-        let duration = try await asset.load(.duration).seconds
-        let moments = moments(clicks: metadata.clicks, transcript: metadata.transcript, duration: duration)
+        let plan = try await plan(for: files, metadata: metadata)
+        return try await writeFolder(
+            for: files, folder: files.agentDirectory, plan: plan, fileManager: fileManager, progress: progress
+        ) { paths in
+            [(promptFileName, markdown(
+                title: metadata.title, created: metadata.created, duration: plan.duration, captureKind: metadata.captureKind,
+                moments: plan.moments, pictures: paths, transcript: metadata.transcript, request: request))]
+        }
+    }
 
-        let folder = files.agentDirectory
+    /// The shared part of every take-to-document export (the agent request, the bug report): a picture at each
+    /// moment in `frames`, and the files `render` makes from their paths (the first is the main one). Written in a
+    /// staging folder and moved into place, so `folder` appears only when complete.
+    static func writeFolder(
+        for files: TakeFiles, folder: URL, plan: Plan, fileManager: FileManager,
+        progress: @escaping @Sendable (Double) -> Void,
+        render: (_ pictures: [String]) -> [(name: String, text: String)]
+    ) async throws -> Output {
+        let asset = AVURLAsset(url: files.video)
+        let duration = plan.duration
+        let moments = plan.moments
+
         let parent = folder.deletingLastPathComponent()
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         let staging = parent.appendingPathComponent(".partial-\(UUID().uuidString)", isDirectory: true)
@@ -227,13 +255,9 @@ public enum AgentBrief {
             progress(Double(index + 1) / Double(max(1, moments.count)))
         }
 
-        func prompt(_ paths: [String]) -> String {
-            markdown(
-                title: metadata.title, created: metadata.created, duration: duration, captureKind: metadata.captureKind,
-                moments: moments, pictures: paths, transcript: metadata.transcript, request: request)
+        for file in render(names.map { "\(picturesFolder)/\($0)" }) {
+            try file.text.write(to: staging.appendingPathComponent(file.name), atomically: true, encoding: .utf8)
         }
-        try prompt(names.map { "\(picturesFolder)/\($0)" })
-            .write(to: staging.appendingPathComponent(promptFileName), atomically: true, encoding: .utf8)
 
         if fileManager.fileExists(atPath: folder.path) {
             _ = try fileManager.replaceItemAt(folder, withItemAt: staging)
@@ -241,9 +265,10 @@ public enum AgentBrief {
             try fileManager.moveItem(at: staging, to: folder)
         }
         let pictures = names.map { folder.appendingPathComponent(picturesFolder).appendingPathComponent($0) }
+        let main = render(pictures.map(\.path)).first
         return Output(
-            folder: folder, promptFile: folder.appendingPathComponent(promptFileName), pictures: pictures,
-            copyText: prompt(pictures.map(\.path)))
+            folder: folder, promptFile: folder.appendingPathComponent(main?.name ?? ""), pictures: pictures,
+            copyText: main?.text ?? "")
     }
 }
 
