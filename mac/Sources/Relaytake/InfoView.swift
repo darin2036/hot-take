@@ -46,7 +46,7 @@ struct InfoView: View {
     @State private var previous: [MetadataField: String] = [:]
     @State private var aiNote = ""
     /// Progress text while captions are being made.
-    @State private var makingCaptions: String?
+    @State private var showFile = false
 
     var body: some View {
         ScrollView {
@@ -183,12 +183,14 @@ struct InfoView: View {
         saveTask?.cancel()
         guard draft != saved else { return }
         let snapshot = draft
+        let before = saved
         do {
+            // Only the fields edited here are written, so a summary written from the Watch page meanwhile stays.
             try TakeLibrary.update(take) { metadata in
-                metadata.title = snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                metadata.summary = snapshot.summary
-                metadata.tags = TakeMetadata.parseTags(snapshot.tags)
-                metadata.notes = snapshot.notes
+                if snapshot.title != before.title { metadata.title = snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if snapshot.summary != before.summary { metadata.summary = snapshot.summary }
+                if snapshot.tags != before.tags { metadata.tags = TakeMetadata.parseTags(snapshot.tags) }
+                if snapshot.notes != before.notes { metadata.notes = snapshot.notes }
             }
             saved = snapshot
             status = "Saved"
@@ -198,45 +200,11 @@ struct InfoView: View {
         }
     }
 
-    // MARK: Captions
-
-    /// Makes (or remakes) the .vtt captions file from this recording's audio, on this Mac.
-    private var captionsRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(take.hasCaptions ? "Captions are saved beside the video as a .vtt file." : "No captions file yet.",
-                  systemImage: "captions.bubble")
-                .font(.callout).foregroundStyle(.secondary)
-            if let makingCaptions {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(makingCaptions).font(.caption).foregroundStyle(.secondary)
-                }
-            } else {
-                Button(take.hasCaptions ? "Remake Captions" : "Make Captions") { makeCaptions() }
-                    .controlSize(.small)
-                    .help("Listens to the recording on this Mac and writes a captions file. Your title, summary and notes are kept.")
-            }
-        }
-    }
-
-    private func makeCaptions() {
-        makingCaptions = "Starting…"
-        Task {
-            let notes = await Pipeline.process(
-                take: take.files, created: take.created, options: .init(captions: true, summary: false)
-            ) { makingCaptions = $0 }
-            makingCaptions = nil
-            library.refresh()
-            facts = await FileFacts.load(take: library.takes.first { $0.id == take.id } ?? take, library: library)
-            if !notes.isEmpty { aiNote = notes.joined(separator: " ") }
-        }
-    }
-
     // MARK: File facts
 
     private var fileFacts: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("File").font(.headline)
+        DisclosureGroup(isExpanded: $showFile) {
+            VStack(alignment: .leading, spacing: 10) {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 5) {
                 ForEach(Array(facts.enumerated()), id: \.offset) { _, fact in
                     GridRow {
@@ -247,17 +215,14 @@ struct InfoView: View {
                 }
             }
             .font(.callout)
-            captionsRow
-            HStack {
-                Button("Show in Folder", systemImage: "magnifyingglass") {
-                    NSWorkspace.shared.activateFileViewerSelecting([take.files.video])
-                }
-                Button("Copy Path", systemImage: "doc.on.doc") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(take.files.video.path, forType: .string)
-                }
+            Button("Show in Folder", systemImage: "magnifyingglass") {
+                NSWorkspace.shared.activateFileViewerSelecting([take.files.video])
             }
             .controlSize(.small)
+            }
+            .padding(.top, 6)
+        } label: {
+            Text("File").font(.headline)
         }
     }
 }

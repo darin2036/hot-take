@@ -170,7 +170,7 @@ public enum TakeLibrary {
 
     /// Moves the take's files to the Trash. Never deletes permanently.
     public static func trash(_ entry: TakeEntry, fileManager: FileManager = .default) throws {
-        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft, entry.files.agentDirectory]
+        for url in [entry.files.video, entry.files.captions, entry.files.metadata, entry.files.screenOriginal, entry.files.cameraOriginal, entry.files.draft, entry.files.agentDirectory, entry.files.bugReportDirectory]
             + entry.files.audioFiles()
         where fileManager.fileExists(atPath: url.path) {
             try fileManager.trashItem(at: url, resultingItemURL: nil)
@@ -238,6 +238,7 @@ public enum TakeLibrary {
             (entry.files.metadata, moved.metadata),
             (entry.files.screenOriginal, moved.screenOriginal), (entry.files.cameraOriginal, moved.cameraOriginal),
             (entry.files.draft, moved.draft), (entry.files.agentDirectory, moved.agentDirectory),
+            (entry.files.bugReportDirectory, moved.bugReportDirectory),
         ]
         // Audio that came with a shared take moves with it.
         let audioPairs = entry.files.audioFiles().map { from -> (URL, URL) in

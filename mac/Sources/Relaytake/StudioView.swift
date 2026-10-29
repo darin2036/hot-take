@@ -25,11 +25,7 @@ struct StudioView: View {
     /// The transcript beside the preview, for cutting by line.
     @AppStorage("studioShowTranscript") private var showTranscript = true
 
-    private var saveOptions: StudioSaveOptions {
-        StudioSaveOptions(
-            quality: keepOriginal ? nil : EncodingPreferences.resolve(VideoQuality(rawValue: sizeChoice) ?? .medium),
-            includeAudio: includeAudio)
-    }
+    private var saveOptions: StudioSaveOptions { .stored }
 
     init(take: TakeEntry, library: LibraryModel, close: @escaping () -> Void) {
         self.init(model: StudioModel(take: take, library: library), close: close)
@@ -58,7 +54,9 @@ struct StudioView: View {
             Transport(model: model, clock: model.clock, showVoiceover: $showVoiceover, showSuggestions: $showSuggestions, take: take)
             TightenBar(model: model)
             StudioTimeline(model: model)
-            StudioProperties(model: model, startVoiceover: { showVoiceover = true })
+            if model.selection != .none {
+                StudioProperties(model: model, startVoiceover: { showVoiceover = true })
+            }
         }
         .overlay { if model.saveProgress != nil { savingOverlay } }
         .overlay(alignment: .top) { notice }
@@ -117,7 +115,7 @@ struct StudioView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Studio").font(.headline)
-                Text("Your original is never changed. Save Copy makes a new recording.")
+                Text("Your original is never changed. File ▸ Save Copy makes a new recording.")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
@@ -134,12 +132,6 @@ struct StudioView: View {
                 .help("File size, audio, and exporting to a file")
                 .hoverLabel("Save Options", above: false)
                 .popover(isPresented: $showSaveOptions, arrowEdge: .bottom) { saveOptionsPanel }
-            Button { model.save(options: saveOptions) { close() } } label: { Label("Save Copy", systemImage: "square.and.arrow.down") }
-                .buttonStyle(TakeButtonStyle(color: .accentColor))
-                .disabled(!model.canSave(saveOptions))
-                .help(model.canSave(saveOptions)
-                    ? "Make a new recording in your library. The original stays as it is."
-                    : "Make an edit, or choose a smaller file size, first")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
@@ -235,9 +227,8 @@ private struct Transport: View {
     @State private var showCamera = false
     @State private var showZoom = false
     @State private var showMarks = false
+    @State private var showSensitiveScan = false
     @AppStorage("autoZoomAmount") private var zoomAmount = 1.8
-    @AppStorage("tightenPause") private var pauseSeconds = 2.0
-    @AppStorage("tightenFillers") private var findFillers = true
     @State private var fromPlayhead = false
     @State private var replaceOriginal = true
 
@@ -263,7 +254,6 @@ private struct Transport: View {
                 model.splice()
             }
             .fixedSize()
-            .keyboardShortcut("b", modifiers: .command)
             .help("Break the track you have selected at the playhead (S or ⌘B): the Audio track, or a text, zoom, music or voiceover clip. With nothing selected it breaks every track, video and sound together. The arrow beside it picks the video or the audio alone, and the button then keeps that choice. [ and ] drop everything before or after the playhead.")
             .disabled(!model.ready)
 
@@ -328,6 +318,7 @@ private struct Transport: View {
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
                 .hoverLabel(iconOnly ? "Mark" : nil)
                 .popover(isPresented: $showMarks, arrowEdge: .top) { markOptions }
+                .sheet(isPresented: $showSensitiveScan) { SensitiveScanSheet(model: model, job: model.sensitiveScan) }
             Button { model.chooseMusic() } label: { Label("Add Music", systemImage: "music.note") }
                 .help("Choose a song to play under the video. You can also drop an audio file on the timeline.")
                 .frame(width: iconOnly ? 34 : nil, height: iconOnly ? 26 : nil)
@@ -345,49 +336,23 @@ private struct Transport: View {
         }
     }
 
-    /// Finds pauses, restarts and (if chosen) filler words. They then sit on the Video track for you to cut one by one,
-    /// or all the pauses or all the fillers at once.
+    /// One button: cuts the long pauses and filler words in one undoable step.
     private var tightenPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Tighten").font(.headline)
-            Text("Finds long pauses, places where you said something twice, and filler words. They show on the Video track, and nothing is cut until you choose it.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Pauses longer than").font(.caption).foregroundStyle(.secondary)
-                Picker("Pauses longer than", selection: $pauseSeconds) {
-                    Text("1 s").tag(1.0)
-                    Text("2 s").tag(2.0)
-                    Text("3 s").tag(3.0)
-                }
-                .pickerStyle(.segmented).labelsHidden()
-                .help("Pauses shorter than this are left alone. A little breathing room stays at each end of a pause you cut.")
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle("Filler words (um, uh, er)", isOn: $findFillers)
-                Text("Found from the timing of each word, on this Mac. English only.")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            .help("Also find \u{201C}um\u{201D}, \u{201C}uh\u{201D}, \u{201C}er\u{201D}, \u{201C}ah\u{201D} and \u{201C}hmm\u{201D}. Words like \u{201C}like\u{201D} and \u{201C}you know\u{201D} are left alone.")
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Button(model.tightenSearched ? "Find Again" : findFillers ? "Find Pauses, Restarts and Fillers" : "Find Pauses and Restarts") {
-                    model.findTighten(pauseLength: pauseSeconds, fillers: findFillers) { found in if found > 0 { showSuggestions = false } }
-                }
-                .disabled(model.tightenStatus != nil)
+                Button("Tighten") { model.tightenAll() }
+                    .disabled(model.tightenStatus != nil)
                 if let status = model.tightenStatus {
                     ProgressView().controlSize(.small)
                     Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            if model.tightenSearched, model.pendingTighten.isEmpty, model.tightenStatus == nil {
-                Label(findFillers ? "Nothing to tighten. No long pauses, repeated sentences or filler words were found."
-                    : "Nothing to tighten. No long pauses or repeated sentences were found.", systemImage: "checkmark.circle")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Removes long pauses and filler words").font(.callout).foregroundStyle(.secondary)
             ForEach(model.tightenNotes, id: \.self) {
                 Text($0).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(16).frame(width: 340)
+        .padding(16).frame(width: 300)
     }
 
     private var backgroundOptions: some View {
@@ -538,6 +503,8 @@ private struct Transport: View {
                         .help(kind == .blur ? "Blur out a region, such as a name or an email address" : "Add a \(kind.title.lowercased())")
                 }
             }
+            Button { showMarks = false; showSensitiveScan = true } label: { Label("Find Sensitive Info…", systemImage: "eye.slash") }
+                .help("Look through the recording for email addresses, keys, card numbers and more, and choose which to blur")
             Divider()
             Toggle("Ring each click", isOn: Binding(
                 get: { model.project.clickHighlight != nil }, set: { model.setClickHighlightsOn($0) }))
@@ -671,8 +638,7 @@ struct StudioProperties: View {
     @ViewBuilder private var content: some View {
         switch model.selection {
         case .none:
-            Label("Click a clip to change it. To cut, move the playhead and Splice (S) to break every track, or select the Audio track first to break only the sound. Then click a part and press Delete.", systemImage: "hand.point.up.left")
-                .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            EmptyView()
         case .range(let range): rangeBar(range)
         case .text(let id):
             if let text = model.project.text(id) { textBar(text) }

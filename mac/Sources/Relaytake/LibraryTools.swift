@@ -159,16 +159,6 @@ extension LibraryModel {
         RecorderModel.current?.importVideos(panel.urls)
     }
 }
-
-struct ImportCommands: Commands {
-    var body: some Commands {
-        CommandGroup(after: .newItem) {
-            Button("Import Video…") { LibraryModel.shared.chooseAndImportVideos() }
-                .keyboardShortcut("i", modifiers: [.command, .shift])
-        }
-    }
-}
-
 // MARK: Watch page: speed and "More"
 
 /// Playback speed for the recording being watched.

@@ -24,12 +24,15 @@ enum TestMedia {
     }
 
     /// A solid-color H.264 video, optionally with a tone as its sound.
+    /// `faststart` puts the movie header before the picture data, as network-ready files do; otherwise it comes last.
     static func video(
-        seconds: Double, color: (UInt8, UInt8, UInt8), toneHz: Double? = nil, width: Int = 320, height: Int = 180
+        seconds: Double, color: (UInt8, UInt8, UInt8), toneHz: Double? = nil, width: Int = 320, height: Int = 180,
+        faststart: Bool = false
     ) async throws -> URL {
         let fps = 15
         let silent = tempURL("mp4")
         let writer = try AVAssetWriter(outputURL: silent, fileType: .mp4)
+        writer.shouldOptimizeForNetworkUse = faststart
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
         ])

@@ -4,9 +4,9 @@ import Foundation
 /// function of this clock, so it can be checked without a window and drawn at any moment for a snapshot.
 public enum WelcomeTimeline {
     /// The welcome is over: the app is fully showing.
-    public static let duration = 5.8
+    public static let duration = 3.0
     /// The backdrop starts to give way to the app here.
-    public static let fadeOutStart = 4.8
+    public static let fadeOutStart = 2.5
 
     /// 0...1: how much of the backdrop is still covering the app.
     public static func backdrop(at time: Double) -> Double {
@@ -14,17 +14,17 @@ public enum WelcomeTimeline {
     }
 
     /// 0...1: the logo coming up out of the glow.
-    public static func logo(at time: Double) -> Double { ease(ramp(time, from: 0.3, to: 1.3)) }
+    public static func logo(at time: Double) -> Double { ease(ramp(time, from: 0.1, to: 0.6)) }
 
     /// 0...1: the "Welcome" line.
-    public static func greeting(at time: Double) -> Double { ease(ramp(time, from: 1.4, to: 2.1)) }
+    public static func greeting(at time: Double) -> Double { ease(ramp(time, from: 0.45, to: 0.8)) }
 
     /// 0...1: the question, "What's your Hot Take?".
-    public static func question(at time: Double) -> Double { ease(ramp(time, from: 2.5, to: 3.3)) }
+    public static func question(at time: Double) -> Double { ease(ramp(time, from: 0.75, to: 1.25)) }
 
     /// 0...1: how much of the logo and words remain. They leave a little ahead of the backdrop.
     public static func content(at time: Double) -> Double {
-        1 - ease(ramp(time, from: fadeOutStart - 0.3, to: fadeOutStart + 0.5))
+        1 - ease(ramp(time, from: fadeOutStart - 0.15, to: fadeOutStart + 0.25))
     }
 
     /// The start time to use after a click or key press: straight to the fade-out, or later if it is already past it.

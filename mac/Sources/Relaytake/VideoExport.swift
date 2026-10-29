@@ -25,7 +25,7 @@ enum VideoExport {
     }
 
     static func save(asset: AVAsset, segments: [TimeSpan], to destination: URL,
-                     format: VideoExportFormat, quality: EncodingSettings, includeAudio: Bool,
+                     format: VideoExportFormat, quality: EncodingSettings, includeAudio: Bool, chapters: [Chapter] = [],
                      progress: @escaping @MainActor (Double) -> Void) async throws {
         let fm = FileManager.default
         // Finish alongside the destination before replacing anything the save panel approved.
@@ -42,10 +42,15 @@ enum VideoExport {
             try await Exporter.save(asset: asset, segments: segments, to: output, quality: quality, includeAudio: includeAudio, progress: progress)
         }
         try Task.checkCancellation()
+        var finished = output
+        if format != .webm, !chapters.isEmpty {
+            finished = staging.appendingPathComponent("chapters-\(output.lastPathComponent)")
+            try ChapterTrack.add(chapters, duration: segments.reduce(0) { $0 + $1.length }, from: output, to: finished)
+        }
         if fm.fileExists(atPath: destination.path) {
-            _ = try fm.replaceItemAt(destination, withItemAt: output)
+            _ = try fm.replaceItemAt(destination, withItemAt: finished)
         } else {
-            try fm.moveItem(at: output, to: destination)
+            try fm.moveItem(at: finished, to: destination)
         }
         await progress(1)
     }

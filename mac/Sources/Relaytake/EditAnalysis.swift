@@ -14,7 +14,7 @@ enum EditAnalysis {
 
     /// `pauseLength` is the shortest pause, in seconds, worth proposing.
     static func run(
-        for entry: TakeEntry, pauseLength: Double = 2, fillers findFillers: Bool = false,
+        for entry: TakeEntry, pauseLength: Double = 2, fillers findFillers: Bool = false, restarts findRestarts: Bool = true,
         progress: @escaping @MainActor (String) -> Void
     ) async -> Result {
         var notes: [String] = []
@@ -53,7 +53,7 @@ enum EditAnalysis {
             notes.append("No transcript, so recommendations are limited to quiet parts: \(error.localizedDescription)")
         }
 
-        if !segments.isEmpty {
+        if findRestarts, !segments.isEmpty {
             restarts = RestartFinder.find(in: segments)
             if let unavailable = Summarizer.availabilityMessage {
                 notes.append(unavailable + " Pauses and repeated sentences were still found; other restarts need it.")

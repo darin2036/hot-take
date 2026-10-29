@@ -41,6 +41,10 @@ public struct TakeFiles: Equatable, Sendable {
     public var agentDirectory: URL {
         directory.appendingPathComponent(".hot-take-agent", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
     }
+    /// The take turned into a bug report (`BUG-REPORT.md` and its pictures), out of sight beside it.
+    public var bugReportDirectory: URL {
+        directory.appendingPathComponent(".hot-take-bug-report", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
+    }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
 

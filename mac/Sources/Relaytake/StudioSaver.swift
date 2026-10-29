@@ -9,6 +9,16 @@ struct StudioSaveOptions {
     /// nil keeps the render's own quality. Otherwise the file is compressed to these settings.
     var quality: EncodingSettings?
     var includeAudio = true
+
+    /// The choices made in the Studio's Save Options, which File ▸ Save Copy and File ▸ Export use too.
+    static var stored: StudioSaveOptions {
+        let defaults = UserDefaults.standard
+        let keepOriginal = defaults.object(forKey: "studioKeepOriginal") as? Bool ?? true
+        let size = defaults.string(forKey: "studioQuality") ?? "medium"
+        return StudioSaveOptions(
+            quality: keepOriginal ? nil : EncodingPreferences.resolve(VideoQuality(rawValue: size) ?? .medium),
+            includeAudio: defaults.object(forKey: "studioIncludeAudio") as? Bool ?? true)
+    }
 }
 
 /// Turns a Studio project into a file. Text, music and voiceover are drawn and mixed once, at full
@@ -16,9 +26,10 @@ struct StudioSaveOptions {
 /// format, that render is handed to the app's existing compressor and exporter, which only ever see a
 /// finished video, so they need no knowledge of overlays or extra audio.
 enum StudioSaver {
+    /// `chapters` are where each chapter falls in the edited video. MP4 and MOV files carry them as chapters for players.
     static func render(
         asset: AVAsset, project: StudioProject, to destination: URL, format: VideoExportFormat,
-        options: StudioSaveOptions, progress: @escaping @MainActor (Double) -> Void
+        options: StudioSaveOptions, chapters: [Chapter] = [], progress: @escaping @MainActor (Double) -> Void
     ) async throws {
         let fileManager = FileManager.default
         let staging = destination.deletingLastPathComponent()
@@ -38,7 +49,12 @@ enum StudioSaver {
         try Task.checkCancellation()
 
         if direct {
-            try place(master, at: destination)
+            var finished = master
+            if !chapters.isEmpty {
+                finished = staging.appendingPathComponent("chapters-master.\(masterExtension)")
+                try ChapterTrack.add(chapters, duration: project.outputDuration, from: master, to: finished)
+            }
+            try place(finished, at: destination)
         } else {
             let masterAsset = AVURLAsset(url: master)
             let length = try await masterAsset.load(.duration).seconds
@@ -46,7 +62,7 @@ enum StudioSaver {
             let encoding = options.quality ?? EncodingPreferences.resolve(.large)
             try await VideoExport.save(
                 asset: masterAsset, segments: [TimeSpan(start: 0, end: length)], to: destination, format: format,
-                quality: encoding, includeAudio: options.includeAudio
+                quality: encoding, includeAudio: options.includeAudio, chapters: chapters
             ) { value in progress(0.5 + value * 0.5) }
         }
         await progress(1)

@@ -77,19 +77,3 @@ extension StudioModel {
         }
     }
 }
-
-struct SharedProjectCommands: Commands {
-    /// The Studio that is open, if any, so Save Project is only on offer while there is a project to save.
-    @ObservedObject private var library = LibraryModel.shared
-
-    var body: some Commands {
-        CommandGroup(after: .newItem) {
-            Button("Open Hot Take File…") { LibraryModel.shared.chooseAndOpenPackage() }
-                .keyboardShortcut("o", modifiers: .command)
-            // The same action as the Save Project button in the window's toolbar.
-            Button("Save Project…") { library.openStudio?.shareProject() }
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(library.openStudio == nil)
-        }
-    }
-}

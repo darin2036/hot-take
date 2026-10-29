@@ -21,6 +21,13 @@ struct TranscriptView: View {
     @FocusState private var findFocused: Bool
     @FocusState private var editFocused: Bool
     @State private var status: String?
+    @StateObject private var summaryJob = SummaryJob()
+    /// The summary card above the transcript; collapsed once, it stays collapsed.
+    @AppStorage("transcriptSummaryOpen") private var summaryOpen = true
+    /// Width of the transcript column beside the video; dragged with the divider and remembered.
+    @AppStorage("transcriptPaneWidth") private var paneWidth = 380.0
+    private static let minPane = 260.0
+    private static let minVideo = 260.0
     @State private var problem = ""
     /// The recording's chapters, shown as headings among the lines.
     @StateObject private var chapters = ChapterBook()
@@ -65,15 +72,21 @@ struct TranscriptView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            PlayerView(player: player.player, fileURL: take.files.video)
-                .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black).clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                if segments.isEmpty && chapters.shown.isEmpty { empty } else { list }
+        GeometryReader { proxy in
+            // The video always keeps at least `minVideo`; the transcript can be as narrow as `minPane`.
+            let maxPane = max(Self.minPane, proxy.size.width - Self.minVideo - 15)
+            let width = min(max(paneWidth, Self.minPane), maxPane)
+            HStack(alignment: .top, spacing: 0) {
+                PlayerView(player: player.player, fileURL: take.files.video)
+                    .frame(minWidth: Self.minVideo, maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.black).clipShape(RoundedRectangle(cornerRadius: 8))
+                PaneDivider(width: $paneWidth, range: Self.minPane...maxPane, current: width)
+                VStack(alignment: .leading, spacing: 10) {
+                    header
+                    if segments.isEmpty && chapters.shown.isEmpty { empty } else { list }
+                }
+                .frame(width: width, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(width: 380, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
         }
         .padding(16)
         .task(id: take.id) {
@@ -86,10 +99,10 @@ struct TranscriptView: View {
         .translationTask(translationConfig) { session in await runTranslation(session) }
         .focusedSceneValue(\.transcriptFind, segments.isEmpty ? nil : TranscriptFindActions(
             show: openFind, next: { stepMatch(1) }, previous: { stepMatch(-1) }))
-        .confirmationDialog("Remake the transcript?", isPresented: $confirmRemake) {
-            Button("Remake", role: .destructive) { make() }
+        .confirmationDialog("Regenerate the transcript?", isPresented: $confirmRemake) {
+            Button("Regenerate", role: .destructive) { make() }
         } message: {
-            Text("This listens again and replaces the current text, including any corrections you made.")
+            Text("The AI built into your Mac will listen to the recording again and write a fresh transcript. It replaces the current one, including any corrections you made. Nothing leaves this Mac.")
         }
     }
 
@@ -104,9 +117,13 @@ struct TranscriptView: View {
                     }
                     .toolbarIcon(showingTranslation ? "Copy the whole translation" : "Copy the whole transcript")
                     translateMenu
-                    Button(role: .none) { confirmRemake = true } label: { Label("Remake", systemImage: "arrow.clockwise") }
+                    Button { summaryJob.run(for: take, library: library); summaryOpen = true } label: { Label("Summarize", systemImage: "sparkles") }
+                        .disabled(summaryJob.isRunning || status != nil || Summarizer.availabilityMessage != nil)
+                        .toolbarIcon(Summarizer.availabilityMessage.map { "Can't summarize: \($0)" }
+                            ?? "Summarize with AI: read the whole transcript and write a short summary, on this Mac")
+                    Button(role: .none) { confirmRemake = true } label: { Label("Regenerate", systemImage: "arrow.clockwise") }
                         .disabled(status != nil)
-                        .toolbarIcon("Remake the transcript: listen to the recording again on this Mac and replace it")
+                        .toolbarIcon("Regenerate the transcript: the on-device AI listens to the recording again and replaces it")
                 }
                 if loaded { ChapterActionsMenu(book: chapters) { if segments.isEmpty { reload() } } }
             }
@@ -115,10 +132,52 @@ struct TranscriptView: View {
                 Label("Saved", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
             }
             if findOpen { findBar }
+            summaryCard
             if let status {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text(status).font(.caption).foregroundStyle(.secondary) }
             }
             if !problem.isEmpty { Text(problem).font(.caption).foregroundStyle(.red) }
+        }
+    }
+
+    /// The take's summary above the transcript, so a long recording can be understood without reading every line.
+    @ViewBuilder private var summaryCard: some View {
+        let summary = TakeLibrary.metadata(for: take.files)?.summary ?? ""
+        let _ = summaryJob.revision
+        if summaryJob.isRunning || !summary.isEmpty || !summaryJob.note.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Summary").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let working = summaryJob.status {
+                        ProgressView().controlSize(.small)
+                        Text(working).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else {
+                        if summaryJob.previous != nil {
+                            Button("Undo") { summaryJob.undo(for: take, library: library) }
+                                .buttonStyle(.link).font(.caption)
+                        }
+                        if !summary.isEmpty {
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(summary, forType: .string)
+                            }
+                            .buttonStyle(.borderless).controlSize(.small).help("Copy the summary")
+                            Button(summaryOpen ? "Hide" : "Show") { summaryOpen.toggle() }
+                                .buttonStyle(.link).font(.caption)
+                        }
+                    }
+                }
+                if summaryOpen, !summary.isEmpty {
+                    ScrollView {
+                        Text(summary).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 180)
+                }
+                if !summaryJob.note.isEmpty { Text(summaryJob.note).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(10)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -436,5 +495,36 @@ struct TranscriptFindCommands: Commands {
             Button("Find Next") { find?.next() }.keyboardShortcut("g").disabled(find == nil)
             Button("Find Previous") { find?.previous() }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled(find == nil)
         }
+    }
+}
+
+/// A thin draggable bar between the video and a panel on its right. Dragging left widens the panel;
+/// double-click puts it back to the default width.
+struct PaneDivider: View {
+    @Binding var width: Double
+    let range: ClosedRange<Double>
+    let current: Double
+    var reset = 380.0
+    @State private var startWidth: Double?
+
+    var body: some View {
+        Rectangle().fill(.separator).frame(width: 1)
+            .padding(.horizontal, 7)
+            .contentShape(Rectangle())
+            .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { drag in
+                    let start = startWidth ?? current
+                    startWidth = start
+                    width = min(max(start - drag.translation.width, range.lowerBound), range.upperBound)
+                }
+                .onEnded { _ in startWidth = nil })
+            .onTapGesture(count: 2) { width = reset }
+            .accessibilityLabel("Resize transcript")
+            .accessibilityAdjustableAction { direction in
+                let step = 40.0
+                width = min(max(current + (direction == .increment ? step : -step), range.lowerBound), range.upperBound)
+            }
+            .help("Drag to resize the video and transcript. Double-click to reset.")
     }
 }

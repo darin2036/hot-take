@@ -8,10 +8,32 @@ Builds 2 and later.
 
 ### Current pull request: launch welcome
 
+- **Mac app:** **Find Sensitive Info…** in the Studio's Mark popover looks through a recording for email addresses, phone numbers, addresses, card and ID numbers, keys, tokens, passwords and words you list, and lets you choose which to blur. It is off until you start it, shows a progress bar with Stop, runs on this Mac only, and adds ordinary blurs you can edit or undo. It can miss small or blurry text.
+- **Mac app:** **Rewind** while recording. The control bar's Rewind button (also Record ▸ Rewind 10 Seconds, and ⌃⌥⌘W from any app, changeable in Settings) goes back 10 seconds and pauses, so you can say it again; Resume carries on from there. The footage you rewound over, your camera for it and its clicks are thrown away, and it can be pressed again to go back further. It is not offered on a camera-only take.
+- **Mac app:** MP4 and MOV files saved or exported from the Studio (Save Copy, Export, Share, and File ▸ Export of a recording) carry the recording's chapters, so QuickTime Player and most players show a chapter list and jump to each one. WebM files do not carry chapters yet.
+- **Mac app:** fix: the Info button on the Watch page uses the standard info icon (ⓘ) instead of a sidebar icon, filled while the panel is open.
+
+- **Mac app:** fix: File ▸ Export now works with one recording selected in the library or open in Watch or Transcript, as well as the current Studio edit. Removed the explanatory heading from the Export menu.
+
+- **Mac app:** sped up the welcome from 5.8 to 3 seconds, with earlier title reveals and a half-second fade when skipped.
+
+- **Mac app:** the Info panel beside the video can be resized by dragging the bar between them (double-click resets), and its width is remembered.
+- **Mac app:** the Transcript tab's divider between the video and the transcript can be dragged to resize them (double-click resets), and the width is remembered.
+- **Mac app:** a **Summarize** button on the Transcript tab writes a summary of the whole transcript (long recordings are read in parts) and shows it in a card above the lines, with **Copy**, **Hide** and **Undo**. It is the same summary as on the Watch page.
+- **Mac app:** a **Summarize with AI** button on the Watch page's Summary writes the summary from the whole transcript with the on-device model, with **Undo**. Nothing is uploaded.
+- **Mac app:** fix: the Info panel saves only the fields you edited, so it no longer writes an old summary back over a new one.
+- **Mac app:** the menu bar now holds the app's actions in the usual places: File (new take, new folder, open, open recent, import, save project, show in Finder), View (back to library, info panel, refresh), and new **Record**, **Take** and **Studio** menus. The old scattered File items moved into one group; New Take, Splice and the Info panel shortcuts now belong to the menus.
+- **Mac app:** fix: splicing where it cannot be done (too close to an edge or another splice) no longer pops up a message; it simply does nothing.
+- **Mac app:** **Save Copy** moved out of the Studio's top bar into **File ▸ Save Copy** (⇧⌘S). It, and File ▸ Export, use the Studio's Save Options.
+- **Mac app:** a **File ▸ Export** menu: **MP4, MOV or WebM Video…** saves the Studio's edited video, and **Transcript as Markdown…** saves a take's transcript (with summary, tags and chapter headings) as a `.md` file.
+- **Mac app:** removed the Apple Intelligence summary callout from the welcome and its added About credit.
+
+- **Mac app:** a **Bug Report** button on the Watch page drafts a ticket for a person to paste into Jira, Slack, GitHub or a service desk: a title, summary, steps to reproduce with a picture on each step, expected and actual, all editable. With on-device intelligence it is written from your narration (only what you said); without it each step starts as what you said at that click. Copy it as Markdown, Jira, Slack or plain text, and drag the pictures out to attach them. Nothing is uploaded. The draft is kept in a hidden folder beside the take and reopens with your edits.
 - **Mac app:** redesigned the launch welcome with a midnight violet backdrop, flowing light trails around the flame icon, larger type and a visible skip hint. Reduce Motion shows a still composition.
 
 ### Current pull request: edit by transcript and filler words
 
+- **Mac app:** the Studio's Tighten is now one **Tighten** button, "Removes long pauses and filler words", with no settings or help text. It cuts every pause of 2 seconds or more and every filler word ("um", "uh", "er", "ah", "hmm") in one undoable step and says how many it removed. The pause-length choice, the filler checkbox and the review step for restarts are gone.
 - **Mac app:** the Studio has a **Transcript** panel beside the preview. Select lines and press Delete (or **Cut Lines**) to cut the video under them, and **Bring Back** puts cut lines back. Cuts ripple and undo like any other.
 - **Mac app:** **Tighten** in the Studio can find filler words ("um", "uh", "er", "ah", "hmm") from each word's timing, with **Cut All Fillers**. It always listens with SpeechTranscriber, because the classic dictation model drops these sounds. English only, on this Mac.
 - **Mac app:** fix: cutting several Tighten suggestions at once no longer cuts too much when two of them overlap.
@@ -37,6 +59,8 @@ Builds 2 and later.
 
 ### Changed
 
+- **Mac app:** the transcript's **Remake** button is now **Regenerate**, and its confirmation says the AI built into your Mac does the work and that nothing leaves the Mac.
+- **Mac app:** in the Info panel, the File details now sit in a section that stays collapsed until you open it, with only **Show in Folder**. **Copy Path**, **Make/Remake Captions** and the captions note are gone from it (captions are made from the Transcript).
 - **Mac app:** Share in the Studio sends the current edited version, not the original file.
 - **Mac app:** the separate Edit tab is gone; trimming and splicing happen in the Studio.
 - **Mac app:** Splice with the Audio track selected cuts the recording's sound on its own (Follow Video to undo); with nothing selected it still cuts video and sound together.
@@ -48,6 +72,7 @@ Builds 2 and later.
 
 ### Fixed
 
+- **Mac app:** removed the hint line along the bottom of the Studio; the bar there now appears only when something is selected.
 - **Mac app:** fix: titles, summaries, tags, notes, the agent request and suggested cuts now use a whole long recording, not just its start (and end). The model reads it in pieces and the results are merged, on this Mac.
 - **Mac app:** the buttons above a recording on the Watch page (Chapters, speed, Pictures, For Agent, Info, Trash) no longer crowd or cut off their names; in a narrow window they shrink to icons, then move below the title.
 - **Mac app:** a recording whose picture ends before its audio no longer fails Save Copy, Share or Export with "No frame to draw on"; the last frame is held.

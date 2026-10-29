@@ -175,6 +175,7 @@ struct LibraryView: View {
             }
         }
         .sheet(isPresented: $recorder.choosing) { SourceChooser(recorder: recorder) }
+        .sheet(item: $recorder.bugReportSession) { BugReportSheet(session: $0, recorder: recorder) }
         .overlay { if let request = library.theater { TheaterView(request: request, library: library) } }
         .alert(library.promptTitle, isPresented: Binding(get: { library.prompt != nil }, set: { if !$0 { library.prompt = nil } })) {
             TextField("Name", text: $library.promptText)
@@ -660,7 +661,10 @@ struct TakeDetailView: View {
     @State private var message = ""
     /// The info panel beside the video; remembered between recordings.
     @AppStorage("detailsShowInfo") private var showInfo = false
+    /// Width of the info panel; dragged with the divider and remembered.
+    @AppStorage("infoPaneWidth") private var infoWidth = 330.0
     @State private var summaryExpanded = false
+    @StateObject private var summaryJob = SummaryJob()
 
     private var metadata: TakeMetadata? { TakeLibrary.metadata(for: take.files) }
 
@@ -674,6 +678,10 @@ struct TakeDetailView: View {
             } else {
                 VStack(spacing: 12) {
                     header
+                    GeometryReader { proxy in
+                    // The video keeps at least 300 pt; the info panel can be 280 pt or wider.
+                    let maxInfo = max(280, proxy.size.width - 300 - 15)
+                    let width = min(max(infoWidth, 280), maxInfo)
                     HStack(alignment: .top, spacing: 0) {
                         // The video and summary give way when the info panel slides in beside them.
                         VStack(spacing: 12) {
@@ -688,11 +696,13 @@ struct TakeDetailView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         if showInfo {
-                            Divider().padding(.horizontal, 14)
+                            PaneDivider(width: $infoWidth, range: 280...maxInfo, current: width, reset: 330)
                             InfoView(take: take, library: library)
-                                .frame(width: 330)
+                                .id(summaryJob.revision)
+                                .frame(width: width)
                                 .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
+                    }
                     }
                     .animation(.snappy(duration: 0.28), value: showInfo)
                 }
@@ -736,11 +746,11 @@ struct TakeDetailView: View {
             ChapterMenu(chapters: metadata?.chapters ?? [], player: player)
             SpeedMenu(player: player)
             TakePicturesMenu(take: take, library: library, player: player)
+            BugReportButton(take: take)
             CopyForAgentButton(take: take)
             Button { showInfo.toggle() } label: {
-                Label("Info", systemImage: "sidebar.right").symbolVariant(showInfo ? .fill : .none)
+                Label("Info", systemImage: "info.circle").symbolVariant(showInfo ? .fill : .none)
             }
-            .keyboardShortcut("i", modifiers: [.command, .option])
             .help(showInfo ? "Hide the info panel (⌥⌘I)" : "Show the info panel: title, tags, summary, notes and file details (⌥⌘I)")
             Button("Trash", systemImage: "trash", role: .destructive) { library.confirmDetailTrash = true }
                 .help("Move this recording to the Trash")
@@ -764,6 +774,22 @@ struct TakeDetailView: View {
             HStack {
                 Text("Summary").font(.headline)
                 Spacer()
+                if let working = summaryJob.status {
+                    ProgressView().controlSize(.small)
+                    Text(working).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    if summaryJob.previous != nil {
+                        Button("Undo") { summaryJob.undo(for: take, library: library) }
+                            .buttonStyle(.link).font(.caption)
+                            .help("Put back the summary that was here before")
+                    }
+                    let unavailable = Summarizer.availabilityMessage
+                    Button("Summarize with AI", systemImage: "sparkles") { summaryJob.run(for: take, library: library) }
+                        .buttonStyle(.borderless).controlSize(.small)
+                        .disabled(unavailable != nil)
+                        .help(unavailable.map { "Can't summarize: \($0)" }
+                            ?? "Read the whole transcript and write a summary with the on-device model. Nothing leaves this Mac.")
+                }
                 if !summary.isEmpty {
                     Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
@@ -774,7 +800,7 @@ struct TakeDetailView: View {
             }
             // Natural height, so there is no empty space under it. A long summary shows its first lines, and
             // "Show more" opens the rest in place.
-            Text(summary.isEmpty ? "No summary yet. Open Info and choose Generate." : summary)
+            Text(summary.isEmpty ? "No summary yet. Choose Summarize with AI to write one from the transcript." : summary)
                 .foregroundStyle(summary.isEmpty ? .secondary : .primary)
                 .textSelection(.enabled)
                 .lineLimit(summaryExpanded ? nil : 8)
@@ -783,6 +809,9 @@ struct TakeDetailView: View {
             if summary.count > 450 {
                 Button(summaryExpanded ? "Show less" : "Show more") { summaryExpanded.toggle() }
                     .buttonStyle(.link).font(.callout)
+            }
+            if !summaryJob.note.isEmpty {
+                Text(summaryJob.note).font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -821,7 +850,6 @@ private struct RecordButton: View {
         case .idle:
             Button { recorder.toggle() } label: { Label("New Take", systemImage: "record.circle.fill") }
                 .buttonStyle(TakeButtonStyle(large: prominent))
-                .keyboardShortcut("n")
                 .help("Record your screen (⌘N)")
         case .recording(let since):
             Button { recorder.toggle() } label: {
@@ -831,7 +859,6 @@ private struct RecordButton: View {
                 }
             }
             .buttonStyle(TakeButtonStyle(large: prominent))
-            .keyboardShortcut("n")
             .help("Stop recording (⌘N)")
         case .saving, .processing:
             Button {} label: { Label("Working…", systemImage: "hourglass") }
