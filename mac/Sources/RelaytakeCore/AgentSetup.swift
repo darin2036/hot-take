@@ -8,8 +8,8 @@ public enum AgentSetup {
         case claudeCode = "Claude Code"
         case codex = "Codex"
         case rovoDev = "Rovo Dev"
-        case mcp = "Other MCP apps"
-        case command = "Command line"
+        case mcp = "Other MCP"
+        case command = "Terminal"
 
         public var id: String { rawValue }
     }

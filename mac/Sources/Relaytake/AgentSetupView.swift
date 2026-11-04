@@ -84,6 +84,7 @@ struct AgentSetupSheet: View {
                     step(3, "Ask for a demo") {
                         TextField("What should the demo show? (optional)", text: $topic)
                             .textFieldStyle(.roundedBorder)
+                            .focusEffectDisabled()
                         Text("Paste this to your agent. It plans first and waits for your OK before recording.")
                             .font(.callout).foregroundStyle(.secondary)
                         codeBox(AgentSetup.prompt(topic: topic, helper: helper, skill: skill), label: "Copy Message")
@@ -96,6 +97,7 @@ struct AgentSetupSheet: View {
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
+                .frame(width: Self.contentWidth, alignment: .leading)
                 .padding(20)
             }
             Divider()
@@ -106,8 +108,10 @@ struct AgentSetupSheet: View {
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
-        .frame(width: 560, height: 620)
+        .frame(width: Self.contentWidth + 40, height: 640)
     }
+
+    private static let contentWidth: CGFloat = 580
 
     @ViewBuilder private var status: some View {
         if !enabled {
@@ -131,6 +135,7 @@ struct AgentSetupSheet: View {
                 Text(title).font(.headline)
                 content()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -139,6 +144,7 @@ struct AgentSetupSheet: View {
             Text(text)
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
