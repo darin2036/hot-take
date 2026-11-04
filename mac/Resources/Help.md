@@ -161,7 +161,7 @@ Let an AI agent on this Mac, such as Claude Code or Codex, record a demo of an a
 ### Set it up
 
 - Choose **Let an Agent Record a Demo…** in the menu bar or the Record menu, or click **Set Up…** on the card at the top of the library (the × hides the card; the menu items stay). The same button is in Settings ▸ **Recording**.
-- The window walks you through three steps: turn it on, copy one line (or a few) into Claude Code, Codex or another agent that uses MCP, and copy a first message to give the agent. It also shows when an agent last connected.
+- The window walks you through three steps: turn it on, copy one line (or a few) into Claude Code, Codex, Rovo Dev (the command-line one; browser Rovo cannot reach your Mac) or another agent that uses MCP, and copy a first message to give the agent. It also shows when an agent last connected.
 
 ### Turn it on
 

@@ -34,6 +34,15 @@ import Testing
         #expect(server["args"] as? [String] == ["mcp"])
     }
 
+    @Test func theRovoDevSnippetIsValidJSONWithAStdioTransport() throws {
+        let text = AgentSetup.snippet(for: .rovoDev, helper: helper).text
+        let object = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let server = try #require((object["mcpServers"] as? [String: Any])?["hottake"] as? [String: Any])
+        #expect(server["command"] as? String == helper)
+        #expect(server["args"] as? [String] == ["mcp"])
+        #expect(server["transport"] as? String == "stdio")
+    }
+
     @Test func thePromptNamesTheTopicTheSkillAndTheCommandAndAsksForAPlanFirst() {
         let prompt = AgentSetup.prompt(topic: " the export dialog ", helper: helper, skill: "/skills/demo-recording/SKILL.md")
         #expect(prompt.contains("demo video of the export dialog."))

@@ -7,6 +7,7 @@ public enum AgentSetup {
     public enum Client: String, CaseIterable, Identifiable, Sendable {
         case claudeCode = "Claude Code"
         case codex = "Codex"
+        case rovoDev = "Rovo Dev"
         case mcp = "Other MCP apps"
         case command = "Command line"
 
@@ -40,6 +41,10 @@ public enum AgentSetup {
             return Snippet(
                 instruction: "Add this to ~/.codex/config.toml, then restart Codex.",
                 text: "[mcp_servers.hottake]\ncommand = \(quoted(helper))\nargs = [\"mcp\"]")
+        case .rovoDev:
+            return Snippet(
+                instruction: "Add this to ~/.rovodev/mcp.json (Terminal: acli rovodev mcp opens it), then start a new Rovo Dev session. This is the command-line Rovo Dev; browser Rovo cannot reach your Mac.",
+                text: "{\n  \"mcpServers\": {\n    \"hottake\": {\n      \"command\": \(quoted(helper)),\n      \"args\": [\"mcp\"],\n      \"transport\": \"stdio\"\n    }\n  }\n}")
         case .mcp:
             return Snippet(
                 instruction: "Add this to your app's MCP server settings, then restart it. In Claude Desktop that is Settings ▸ Developer ▸ Edit Config.",
