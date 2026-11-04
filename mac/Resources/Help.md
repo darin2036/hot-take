@@ -154,6 +154,39 @@ The result is `PROMPT.md` plus a `frames` folder in a hidden `.hot-take-agent` f
 
 Nothing is uploaded. Only the time and position of clicks are used: not which app or link, and not what you typed.
 
+## Let an agent record a demo
+
+Let an AI agent on this Mac, such as Claude Code or Codex, record a demo of an app while it uses the app, then tighten the video for you.
+
+### Turn it on
+
+- Open Settings ▸ **Recording** and turn on **Let local agents control recording**. It is off until you do.
+- Only programs run by your own account can connect, nothing leaves this Mac, and the recording bar stays on screen whenever an agent is recording. An agent's recording stops by itself after 30 minutes, and turning the setting off stops one that is running.
+- Screen Recording permission is still yours to give (see *Permissions and privacy*).
+
+### The command
+
+Hot Take comes with a command called `hottake`, inside the app at `Hot Take.app/Contents/Helpers/hottake`. Your agent runs it. The main commands are:
+
+- `hottake start` begins recording a screen after the usual countdown. `hottake stop` saves the take.
+- `hottake marker "Name"` names the moment it is run, such as the start of each step. Markers become chapters in the saved copy and are how an agent says where to cut or zoom.
+- `hottake pause` and `hottake resume`, `hottake status`, and `hottake markers` to list them.
+- `hottake edit list.json` describes an edit: cuts for the parts where the demo waited, zooms, captions, arrows, boxes, blurs, click rings, and what to say at each marker. The edit goes into the take's Studio draft. Open the take in the Studio to look it over and change it.
+- `hottake render` saves the edited take as a new copy in your library. The original is never changed.
+- `hottake mcp` lets an app that speaks MCP (Model Context Protocol) use the same controls as tools.
+
+The agent drives the app being recorded itself; Hot Take only records and edits. Ask your agent to use the *demo-recording* skill that comes with Hot Take (`Hot Take.app/Contents/Resources/skills`) to plan the demo first.
+
+### The voice-over script
+
+When an edit names what to say at each marker, Hot Take writes a file beside the take called `Take name.narration.md`. It lists each part of the edited video with its time and the line to read, and says when a line is too long for its part. Read it yourself, or give it to a voice tool, then add the recording to the Studio as a voiceover.
+
+### What to know
+
+- An edit is refused if the take already has edits in its Studio draft, or while you have the take open in the Studio, so nothing you did is overwritten.
+- Only screens can be recorded this way, not windows, areas or the camera.
+- Look the finished video over before you share it. An agent cannot see whether private text appeared on screen.
+
 ## Make a bug report
 
 Turn a walkthrough of a bug into a ticket you can paste into Jira, Slack, GitHub or a service desk: a title, a short description, steps to reproduce with a picture on each step, and what you expected and what happened.

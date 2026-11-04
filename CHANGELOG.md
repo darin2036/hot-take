@@ -18,6 +18,7 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 
 **For agents and bug reports**
 - **For an agent** turns a take into a request for Claude Code, Codex or Cursor: your narration beside a picture of each click, a transcript and, with on-device intelligence, a goal and steps. Saved as `PROMPT.md` and copied ready to paste.
+- **Local agent control** (off until you turn on Settings ▸ Recording ▸ Let local agents control recording): an agent such as Claude Code or Codex can run the new `hottake` command (or `hottake mcp`) to record a screen, name moments with markers, describe an edit (cuts for the slow parts, zooms, captions, marks, a voice-over script) that lands in the Studio draft, and save it as a new copy. Comes with a *demo-recording* skill.
 - **Bug Report** on the Watch page drafts a ticket (title, summary, steps with pictures, expected and actual) to copy as Markdown, Jira, Slack or plain text.
 
 **Studio**

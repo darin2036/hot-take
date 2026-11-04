@@ -101,7 +101,13 @@ final class RecorderModel: ObservableObject {
     private var lastTarget: RecordingTarget?
     private var contentPicker: ContentPicker?
     private var regionSelector: RegionSelector?
-    private var current: (files: TakeFiles, created: Date)?
+    private(set) var current: (files: TakeFiles, created: Date)?
+    /// Moments an agent named while recording this take (see AgentControl.swift), in seconds of the take.
+    var agentMarkers: [AgentMarker] = []
+    /// Stops an agent's take that was never stopped.
+    var agentLimit: Task<Void, Never>?
+    /// The take an agent recorded most recently, for commands that do not name one.
+    var lastAgentTake: TakeFiles?
     /// New takes go into the folder being viewed in the library.
     var directory: URL { directoryOverride ?? LibraryModel.shared.recordingDirectory }
     /// Used by the `--record-check` test mode to keep its take out of the library.
@@ -113,6 +119,7 @@ final class RecorderModel: ObservableObject {
         // Shortcuts that work in any app.
         GlobalHotkeys.shared.onTrigger = { [weak self] action in self?.handle(action) }
         GlobalHotkeys.shared.refresh()
+        AgentServer.shared.refresh(model: self)
     }
 
     // MARK: Shortcuts and quick capture
@@ -133,7 +140,7 @@ final class RecorderModel: ObservableObject {
     }
 
     /// The display Quick Record and screenshots use: the one recorded last if it is still there, else the main one.
-    private func quickDisplay() -> CGDirectDisplayID? {
+    func quickDisplay() -> CGDirectDisplayID? {
         let last = UserDefaults.standard.object(forKey: Pref.lastDisplay) as? Int
         return QuickCapturePlan.display(
             last: last.flatMap { UInt32(exactly: $0) }, connected: NSScreen.screens.compactMap(\.displayID), main: NSScreen.main?.displayID)
@@ -364,6 +371,7 @@ final class RecorderModel: ObservableObject {
                 camera.stopPreview()
             }
             clickRecorder.start(target: target, startedAt: takeStart)
+            agentMarkers = []
             phase = .recording(since: created)
             if !keepWindows { minimizeWindows() }
             RecordingPanel.shared.show(model: self)
@@ -490,6 +498,7 @@ final class RecorderModel: ObservableObject {
         // The timer and the click timings go back with the footage.
         if let stoppedAt = pausedAt { pausedTotal += max(0, elapsed(at: stoppedAt) - keep) }
         clickRecorder.drop(after: keep)
+        agentMarkers.removeAll { $0.time > keep }
     }
 
     /// Starts the next piece of the take, with the time paused left out.
@@ -668,7 +677,7 @@ final class RecorderModel: ObservableObject {
 
     private var hiddenWindows: [NSWindow] = []
 
-    private func stop() async {
+    func stop() async {
         if let take = cameraOnly { await finishCameraOnly(take); return }
         guard let current else { return }
         let forAgent = quickAgent || UserDefaults.standard.bool(forKey: Pref.recordForAgent)
@@ -941,6 +950,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in LibraryModel.shared.openPackage(url) }
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) { AgentServer.shared.shutdown() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { NotificationCenter.default.post(name: .relaytakeReopen, object: nil) }

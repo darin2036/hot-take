@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Relaytake", targets: ["Relaytake"]),
         .library(name: "RelaytakeCore", targets: ["RelaytakeCore"]),
+        .executable(name: "hottake", targets: ["hottake"]),
     ],
     dependencies: [
         // On-device speech recognition: the system's engines, language models, custom vocabulary and the
@@ -25,6 +26,8 @@ let package = Package(
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The command an agent runs to drive the recorder, and an MCP server over stdio. Talks to the app through a private socket.
+        .executableTarget(name: "hottake", dependencies: ["RelaytakeCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "RelaytakeCoreTests", dependencies: ["RelaytakeCore"]),
     ]
 )

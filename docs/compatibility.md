@@ -263,3 +263,11 @@ Whether the recognizers keep filler sounds was checked first, on this Mac (macOS
 Verified (synthetic): the core tests (filler finding, joined runs of fillers, cuts that never reach into neighbouring words, line states, bringing back cut footage with text rippling, a user's splice kept) and a speech-package test that word timings come through pass with the rest of the suites. The release build bundles. `--studio-snapshot` in the `transcript` and `tighten` variants drew the panel with a cut line struck through, lines marked partly cut, a selected line, and a filler mark with **Cut All Fillers**.
 
 Not verified: clicking, Shift-click, Command-click and Delete in the panel on screen; how a cut filler sounds in a saved copy (the cut is the word's timing less 0.02 s at each end, and is not checked by ear); non-English recordings (they are refused with a note).
+
+## Local agent control — November 3, 2026
+
+Added to the Mac app: an opt-in local control socket, the `hottake` command and its MCP mode, markers, agent edit lists applied to Studio drafts, and a narration script.
+
+Actually run: unit tests for the line protocol, marker storage, edit-list decoding and application (cuts between markers, overlapping cuts, zooms aimed at clicks, captions and marks mapped through cuts, skipped items reported, narration timing and length warnings), and writing an edit into a take's draft (refusing to overwrite edits). A debug build of the app was started with the setting on and `hottake` was used for `ping`, `status`, `marker`, `markers`, `stop` while idle, `edit` with an unknown take and an unknown command; the socket was 0600 in a 0700 folder.
+
+Not verified: starting a real recording through the socket (including the Screen Recording prompt for an agent-started take), `pause`/`resume`/`stop` on a real take (`stop` was only tried while idle), markers lining up with the picture, `render` producing a real copy, opening an agent's draft in the Studio, the MCP mode inside a real MCP client, and the bundled `hottake` helper's signing.

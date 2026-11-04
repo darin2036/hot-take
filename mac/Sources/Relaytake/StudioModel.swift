@@ -97,6 +97,10 @@ final class StudioModel: ObservableObject {
     private var voiceReplacesOriginal = true
     private var voiceTask: Task<Void, Never>?
 
+    /// Every Studio that is alive, so an agent's edit can tell that the person has this take open.
+    private static let live = NSHashTable<StudioModel>.weakObjects()
+    static func isOpen(_ files: TakeFiles) -> Bool { live.allObjects.contains { $0.take.files == files } }
+
     init(take: TakeEntry, library: LibraryModel) {
         self.take = take
         self.library = library
@@ -107,6 +111,7 @@ final class StudioModel: ObservableObject {
         // the camera can be moved, resized or hidden.
         let hasOriginals = FileManager.default.fileExists(atPath: take.files.screenOriginal.path)
         asset = AVURLAsset(url: hasOriginals ? take.files.screenOriginal : take.files.video)
+        Self.live.add(self)
 
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.04, preferredTimescale: 600), queue: .main) { [weak self] value in
             MainActor.assumeIsolated {

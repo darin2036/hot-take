@@ -14,6 +14,11 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp ../CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
 cp Resources/Help.md "$APP/Contents/Resources/Help.md"
 cp "$(swift build -c release --show-bin-path)/Relaytake" "$APP/Contents/MacOS/Hot Take"
+# The command an agent runs to drive the recorder (see Help ▸ Let an agent record a demo).
+mkdir -p "$APP/Contents/Helpers"
+cp "$(swift build -c release --show-bin-path)/hottake" "$APP/Contents/Helpers/hottake"
+mkdir -p "$APP/Contents/Resources/skills/demo-recording"
+cp skills/demo-recording/SKILL.md "$APP/Contents/Resources/skills/demo-recording/SKILL.md"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,11 +57,13 @@ PLIST
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD 2>/dev/null || echo 1)" "$APP/Contents/Info.plist"
 IDENTITY="${RELAYTAKE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
 if [ -n "$IDENTITY" ]; then
+  codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac.hottake "$APP/Contents/Helpers/hottake"
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac "$APP"
   echo "Signed with: $IDENTITY"
 else
   # No certificate: build ad hoc so the app still runs. An ad-hoc signature is different on every rebuild, so the
   # system forgets the Screen Recording grant each time; a free "Apple Development" certificate avoids that.
+  codesign --force --sign - "$APP/Contents/Helpers/hottake"
   codesign --force --sign - "$APP"
   echo "Signed ad-hoc: the system will forget Screen Recording permission after every rebuild."
   echo "A free Apple Development certificate (or RELAYTAKE_SIGN_IDENTITY) keeps it across rebuilds."

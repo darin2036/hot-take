@@ -45,6 +45,12 @@ public struct TakeFiles: Equatable, Sendable {
     public var bugReportDirectory: URL {
         directory.appendingPathComponent(".hot-take-bug-report", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
     }
+    /// The markers an agent dropped while recording this take, out of sight beside it.
+    public var markers: URL {
+        directory.appendingPathComponent(".hot-take-markers", isDirectory: true).appendingPathComponent(baseName + ".markers.json")
+    }
+    /// The voice-over script an agent's edit wrote, beside the take where a person can read it.
+    public var narration: URL { directory.appendingPathComponent(baseName).appendingPathExtension("narration.md") }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }
     public var cameraOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".camera.mov") }
 

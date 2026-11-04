@@ -38,6 +38,7 @@ enum Pref {
     static let showWelcome = "showWelcome"
     /// When a recording stops, turn it into a request for a coding agent and copy it. Off by default.
     static let recordForAgent = "recordForAgent"
+    static let agentControl = "agentControl"
 }
 
 /// Everything configurable lives here, not in the menu-bar dropdown. Panes follow the system's own
@@ -115,6 +116,8 @@ private struct RecordingPane: View {
             }
 
             ShortcutsSection()
+
+            AgentControlSection()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in microphones = Microphone.available() }
