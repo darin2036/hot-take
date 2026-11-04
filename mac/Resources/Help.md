@@ -158,9 +158,14 @@ Nothing is uploaded. Only the time and position of clicks are used: not which ap
 
 Let an AI agent on this Mac, such as Claude Code or Codex, record a demo of an app while it uses the app, then tighten the video for you.
 
+### Set it up
+
+- Choose **Let an Agent Record a Demo…** in the menu bar or the Record menu, or click **Set Up…** on the card at the top of the library (the × hides the card; the menu items stay). The same button is in Settings ▸ **Recording**.
+- The window walks you through three steps: turn it on, copy one line (or a few) into Claude Code, Codex or another agent that uses MCP, and copy a first message to give the agent. It also shows when an agent last connected.
+
 ### Turn it on
 
-- Open Settings ▸ **Recording** and turn on **Let local agents control recording**. It is off until you do.
+- In that window, or in Settings ▸ **Recording**, turn on **Let local agents control recording**. It is off until you do.
 - Only programs run by your own account can connect, nothing leaves this Mac, and the recording bar stays on screen whenever an agent is recording. An agent's recording stops by itself after 30 minutes, and turning the setting off stops one that is running.
 - Screen Recording permission is still yours to give (see *Permissions and privacy*).
 

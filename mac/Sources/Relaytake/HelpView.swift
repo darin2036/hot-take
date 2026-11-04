@@ -13,6 +13,9 @@ enum HelpContent {
         }
     }
 
+    /// A topic another window wants shown the next time Help opens (the title of a "## " heading).
+    @MainActor static var pendingTopic: String?
+
     static var source: String? {
         guard let url = Bundle.main.url(forResource: "Help", withExtension: "md") else { return nil }
         return try? String(contentsOf: url, encoding: .utf8)
@@ -43,12 +46,23 @@ extension Changelog.Line {
     }
 }
 
+extension Notification.Name {
+    static let showHelpTopic = Notification.Name("relaytake.showHelpTopic")
+}
+
 struct HelpView: View {
     private let topics = HelpContent.source.map(HelpContent.parse) ?? []
     @State private var query = ""
     @State private var selection: String?
 
     private var shown: [HelpContent.Topic] { query.isEmpty ? topics : topics.filter { $0.matches(query) } }
+    private func openPendingTopic() {
+        guard let title = HelpContent.pendingTopic, topics.contains(where: { $0.title == title }) else { return }
+        HelpContent.pendingTopic = nil
+        query = ""
+        selection = title
+    }
+
     private var current: HelpContent.Topic? { shown.first { $0.id == selection } ?? shown.first }
 
     var body: some View {
@@ -84,6 +98,8 @@ struct HelpView: View {
                 .id(current.id)
             }
         }
+        .onAppear { openPendingTopic() }
+        .onReceive(NotificationCenter.default.publisher(for: .showHelpTopic)) { _ in openPendingTopic() }
         .searchable(text: $query, placement: .sidebar, prompt: "Search Help")
         .frame(minWidth: 640, idealWidth: 780, minHeight: 420, idealHeight: 600)
     }

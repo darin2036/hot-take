@@ -24,6 +24,7 @@ extension RecorderModel {
         guard let command = AgentCommand(rawValue: request.command) else {
             return .failure("Unknown command “\(request.command)”. Commands: \(AgentCommand.allCases.map(\.rawValue).joined(separator: ", ")).")
         }
+        agentLastSeen = Date()
         switch command {
         case .ping: return AgentResponse(state: agentState)
         case .status: return agentStatus()
@@ -242,6 +243,10 @@ struct AgentControlSection: View {
             Toggle("Let local agents control recording", isOn: $enabled)
                 .help("Lets programs you run on this Mac, such as Claude Code or Codex, start and stop a screen recording, mark moments in it and edit it, using the hottake command. The recording bar stays on screen while they record. Nothing leaves this Mac.")
                 .onChange(of: enabled) { _, _ in AgentServer.shared.refresh() }
+            LabeledContent("Setup") {
+                Button("Set Up an Agent…") { RecorderModel.current?.showingAgentSetup = true; RecorderModel.current?.libraryRequest += 1 }
+                    .help("Shows how to connect Claude Code, Codex or another agent, with text to copy.")
+            }
             if enabled {
                 Text("Only your own account can connect. An agent’s recording stops by itself after 30 minutes, and turning this off stops one that is running.")
                     .font(.caption)

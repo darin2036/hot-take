@@ -104,6 +104,10 @@ final class RecorderModel: ObservableObject {
     private(set) var current: (files: TakeFiles, created: Date)?
     /// Moments an agent named while recording this take (see AgentControl.swift), in seconds of the take.
     var agentMarkers: [AgentMarker] = []
+    /// When an agent last sent a command, shown in the agent setup sheet.
+    @Published var agentLastSeen: Date?
+    /// Shows the "Let an agent record a demo" sheet over the library.
+    @Published var showingAgentSetup = false
     /// Stops an agent's take that was never stopped.
     var agentLimit: Task<Void, Never>?
     /// The take an agent recorded most recently, for commands that do not name one.
@@ -893,7 +897,12 @@ struct MenuContent: View {
             Button("Quick Take for Agent" + Self.hint(.startAgent), systemImage: "sparkles.rectangle.stack") { model.quickRecordForAgent() }
                 .disabled(model.isBusy)
                 .help("Like Quick Record, and when you stop, copy the recording as a request for a coding agent. Talk through what you want while you show it.")
-            Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
+            Button("Let an Agent Record a Demo…", systemImage: "sparkles") {
+            model.showingAgentSetup = true
+            model.libraryRequest += 1
+        }
+        .help("Set up Claude, Codex or another agent to record and edit a demo video of an app for you.")
+        Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
                 .disabled(model.isBusy)
         }
         Button("Speaker Notes", systemImage: "note.text") { SpeakerNotesWindow.shared.toggle() }

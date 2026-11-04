@@ -99,6 +99,7 @@ struct RecordCommands: Commands {
             Divider()
             Button("Quick Record") { recorder.quickRecord() }
                 .disabled(recorder.phase != .idle)
+            Button("Let an Agent Record a Demo…") { recorder.showingAgentSetup = true; recorder.libraryRequest += 1 }
             Button("Quick Take for Agent") { recorder.quickRecordForAgent() }
                 .disabled(recorder.phase != .idle)
             Button("Take Screenshot") { recorder.quickScreenshot() }
