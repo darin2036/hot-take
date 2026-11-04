@@ -40,7 +40,6 @@ struct AgentSetupSheet: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(Pref.agentControl) private var enabled = false
     @State private var client = AgentSetup.Client.claudeCode
-    @State private var topic = ""
     @State private var copied: String?
 
     /// The `hottake` command inside this app.
@@ -61,10 +60,9 @@ struct AgentSetupSheet: View {
                             .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
 
-                    step(1, "Turn it on") {
+                    step(1, "Turn it on", trailing: status) {
                         Toggle("Let local agents control recording", isOn: $enabled)
                             .onChange(of: enabled) { _, _ in AgentServer.shared.refresh() }
-                        status
                     }
 
                     step(2, "Connect your agent, once") {
@@ -82,12 +80,9 @@ struct AgentSetupSheet: View {
                     }
 
                     step(3, "Ask for a demo") {
-                        TextField("What should the demo show? (optional)", text: $topic)
-                            .textFieldStyle(.roundedBorder)
-                            .focusEffectDisabled()
-                        Text("Paste this to your agent. It plans first and waits for your OK before recording.")
+                        Text("Paste this to your agent, and say what the demo should show. It plans first and waits for your OK before recording.")
                             .font(.callout).foregroundStyle(.secondary)
-                        codeBox(AgentSetup.prompt(topic: topic, helper: helper, skill: skill), label: "Copy Message")
+                        codeBox(AgentSetup.prompt(topic: "", helper: helper, skill: skill), label: "Copy Message")
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -115,24 +110,34 @@ struct AgentSetupSheet: View {
 
     @ViewBuilder private var status: some View {
         if !enabled {
-            Label("Off. Agents cannot connect.", systemImage: "circle").font(.callout).foregroundStyle(.secondary)
+            Text("Off. Agents cannot connect.").font(.callout).foregroundStyle(.secondary)
         } else if let seen = recorder.agentLastSeen {
             Label {
                 Text("An agent connected ") + Text(seen, style: .relative) + Text(" ago.")
             } icon: { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
             .font(.callout)
         } else {
-            Label("On. Waiting for an agent to connect.", systemImage: "circle.dotted").font(.callout).foregroundStyle(.secondary)
+            Text("On. Waiting for an agent to connect.").font(.callout).foregroundStyle(.secondary)
         }
     }
 
     private func step<Content: View>(_ number: Int, _ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        step(number, title, trailing: EmptyView(), content)
+    }
+
+    private func step<Content: View, Trailing: View>(
+        _ number: Int, _ title: String, trailing: Trailing, @ViewBuilder _ content: () -> Content
+    ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text("\(number)").font(.callout.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 24, height: 24).background(Circle().fill(.tint))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.headline)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title).font(.headline)
+                    Spacer(minLength: 8)
+                    trailing
+                }
                 content()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -140,23 +145,30 @@ struct AgentSetupSheet: View {
     }
 
     private func codeBox(_ text: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(text)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-            HStack {
-                Button(copied == text ? "Copied" : label, systemImage: copied == text ? "checkmark" : "doc.on.doc") {
+        let done = copied == text
+        return Text(text)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 10).padding(.vertical, 10).padding(.trailing, 34)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     copied = text
+                } label: {
+                    Image(systemName: done ? "checkmark" : "doc.on.doc")
+                        .foregroundStyle(done ? Color.green : Color.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
-                Spacer()
+                .buttonStyle(.borderless)
+                .padding(4)
+                .help(done ? "Copied" : label)
+                .accessibilityLabel(label)
             }
-        }
     }
 
     private func openHelp() {
