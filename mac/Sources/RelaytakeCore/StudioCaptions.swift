@@ -65,14 +65,18 @@ public struct StudioCaptions: Codable, Equatable, Sendable {
     public var cues: [CaptionSegment]
     /// The language the cues are in when they are a translation of the transcript ("es", "ja"). Nil is what was said.
     public var language: String?
+    /// True when the cues are text an agent wrote about what the video shows (for a take with no spoken audio), not what was said.
+    public var fromNarration: Bool?
 
     public init(
-        style: CaptionStyle = .classic, position: CaptionPosition = .bottom, cues: [CaptionSegment], language: String? = nil
+        style: CaptionStyle = .classic, position: CaptionPosition = .bottom, cues: [CaptionSegment], language: String? = nil,
+        fromNarration: Bool? = nil
     ) {
         self.style = style
         self.position = position
         self.cues = cues
         self.language = language
+        self.fromNarration = fromNarration
     }
 }
 

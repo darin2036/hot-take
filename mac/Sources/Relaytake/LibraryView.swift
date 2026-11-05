@@ -176,6 +176,7 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $recorder.choosing) { SourceChooser(recorder: recorder) }
         .sheet(item: $recorder.bugReportSession) { BugReportSheet(session: $0, recorder: recorder) }
+        .sheet(isPresented: $recorder.showingAgentSetup) { AgentSetupSheet(recorder: recorder) }
         .overlay { if let request = library.theater { TheaterView(request: request, library: library) } }
         .alert(library.promptTitle, isPresented: Binding(get: { library.prompt != nil }, set: { if !$0 { library.prompt = nil } })) {
             TextField("Name", text: $library.promptText)
@@ -239,6 +240,7 @@ private struct LibraryBrowser: View {
         .navigationTitle(library.scopeTitle)
         .navigationSubtitle("\(library.matchingCount) recording\(library.matchingCount == 1 ? "" : "s")")
         .searchable(text: $library.query, placement: .toolbar, prompt: "Search recordings")
+        .safeAreaInset(edge: .top, spacing: 0) { AgentCallout(recorder: recorder) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Like a file manager's status line; no buttons, the keyboard and right-click do the work.
             if !library.checked.isEmpty {

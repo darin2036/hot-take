@@ -97,7 +97,7 @@ final class SensitiveScanJob: ObservableObject {
         return sightings
     }
 
-    nonisolated private static func recognize(_ image: CGImage, time: Double, terms: [String]) throws -> [SensitiveSighting] {
+    nonisolated static func recognize(_ image: CGImage, time: Double, terms: [String]) throws -> [SensitiveSighting] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         // Correction would "fix" keys and addresses into words, and then they would not match.

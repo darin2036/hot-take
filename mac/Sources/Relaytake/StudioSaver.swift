@@ -29,7 +29,8 @@ enum StudioSaver {
     /// `chapters` are where each chapter falls in the edited video. MP4 and MOV files carry them as chapters for players.
     static func render(
         asset: AVAsset, project: StudioProject, to destination: URL, format: VideoExportFormat,
-        options: StudioSaveOptions, chapters: [Chapter] = [], progress: @escaping @MainActor (Double) -> Void
+        options: StudioSaveOptions, chapters: [Chapter] = [], watermark: Watermark? = WatermarkPreferences.current(),
+        progress: @escaping @MainActor (Double) -> Void
     ) async throws {
         let fileManager = FileManager.default
         let staging = destination.deletingLastPathComponent()
@@ -43,7 +44,7 @@ enum StudioSaver {
         let master = staging.appendingPathComponent("master.\(masterExtension)")
         let share = direct ? 1.0 : 0.5
 
-        try await StudioComposer.export(asset: asset, project: project, to: master, includeAudio: options.includeAudio) { value in
+        try await StudioComposer.export(asset: asset, project: project, to: master, includeAudio: options.includeAudio, watermark: watermark) { value in
             Task { @MainActor in progress(value * share) }
         }
         try Task.checkCancellation()

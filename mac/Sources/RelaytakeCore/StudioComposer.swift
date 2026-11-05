@@ -32,8 +32,10 @@ public enum StudioComposer {
     ///   - burnText: draw the text overlays into the picture (saving). Previews draw them on top instead.
     ///   - muteOriginal: silence the recording's own sound (used while recording a voiceover).
     ///   - includeAudio: false leaves every audio track out (a silent copy).
+    ///   - watermark: a logo and/or name drawn in a corner of every frame.
     public static func build(
-        asset: AVAsset, project: StudioProject, burnText: Bool, muteOriginal: Bool = false, includeAudio: Bool = true
+        asset: AVAsset, project: StudioProject, burnText: Bool, muteOriginal: Bool = false, includeAudio: Bool = true,
+        watermark: Watermark? = nil
     ) async throws -> Output {
         let composition = AVMutableComposition()
         var parameters: [AVMutableAudioMixInputParameters] = []
@@ -135,7 +137,8 @@ public enum StudioComposer {
         // The backdrop, zoom and marks change the picture itself, so the preview shows them too; text is drawn
         // over the preview by the Studio instead.
         let styled = project.background != nil || !project.zooms.isEmpty || !project.shapes.isEmpty || project.clickHighlight != nil
-        if !drawn.isEmpty || styled || camera != nil, let videoTrack = try await composition.loadTracks(withMediaType: .video).first {
+        let mark = watermark.flatMap { WatermarkRenderer.render($0, renderSize: renderSize) }
+        if !drawn.isEmpty || styled || camera != nil || mark != nil, let videoTrack = try await composition.loadTracks(withMediaType: .video).first {
             // Text is drawn into each frame by our own compositor. (the system's Core Animation video tool
             // returned blank frames on the test Mac, so it is not used.)
             let frameDuration = try await videoTrack.load(.minFrameDuration)
@@ -157,7 +160,8 @@ public enum StudioComposer {
                         CameraEffect(
                             trackID: $0.id, transform: $0.transform, canvas: renderSize, bubble: project.camera,
                             intervals: $0.intervals)
-                    })
+                    },
+                    watermark: mark)
             ]
             videoComposition = AVVideoComposition(configuration: video)
         }
@@ -168,10 +172,11 @@ public enum StudioComposer {
     /// Renders the project to `url` (MP4, or MOV when the name ends in .mov). An existing file at `url`
     /// is replaced; a failed or canceled export leaves nothing behind.
     public static func export(
-        asset: AVAsset, project: StudioProject, to url: URL, includeAudio: Bool = true,
+        asset: AVAsset, project: StudioProject, to url: URL, includeAudio: Bool = true, watermark: Watermark? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let output = try await build(asset: asset, project: project, burnText: true, includeAudio: includeAudio)
+        let output = try await build(
+            asset: asset, project: project, burnText: true, includeAudio: includeAudio, watermark: watermark)
         guard let session = AVAssetExportSession(asset: output.composition, presetName: AVAssetExportPresetHighestQuality)
         else { throw StudioRenderError.failed("This Mac cannot export this video.") }
         session.audioMix = output.audioMix

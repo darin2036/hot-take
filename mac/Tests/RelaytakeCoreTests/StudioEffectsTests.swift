@@ -220,3 +220,35 @@ import Testing
         #expect(plain.videoComposition == nil)  // an unedited preview needs no extra drawing
     }
 }
+
+@Suite struct WatermarkTests {
+    @Test func cornersMeasureFromTheTopLeft() {
+        let canvas = CGSize(width: 1000, height: 500), size = CGSize(width: 200, height: 50)
+        #expect(WatermarkLayout.origin(canvas: canvas, size: size, corner: .topLeft, margin: 10) == CGPoint(x: 10, y: 10))
+        #expect(WatermarkLayout.origin(canvas: canvas, size: size, corner: .bottomRight, margin: 10) == CGPoint(x: 790, y: 440))
+    }
+
+    @Test func clampsSizeAndOpacityAndNeedsSomethingToShow() {
+        let mark = Watermark(text: "  Hot Take ", size: 5, opacity: 0)
+        #expect(mark.text == "Hot Take" && mark.size == Watermark.sizeRange.upperBound && mark.opacity == Watermark.opacityRange.lowerBound)
+        #expect(Watermark(text: "  ").isEmpty)
+        #expect(WatermarkRenderer.render(Watermark(), renderSize: CGSize(width: 320, height: 180)) == nil)
+    }
+
+    @Test func drawsInTheChosenCornerOfASavedVideo() async throws {
+        let source = try await TestMedia.video(seconds: 1, color: (0, 0, 0))
+        defer { try? FileManager.default.removeItem(at: source) }
+        let asset = AVURLAsset(url: source)
+        let duration = try await asset.load(.duration).seconds
+        let output = try await StudioComposer.build(
+            asset: asset, project: StudioProject(duration: duration), burnText: true,
+            watermark: Watermark(text: "Hot Take", corner: .topLeft, size: 0.2, opacity: 1))
+        #expect(output.videoComposition != nil)
+        let generator = AVAssetImageGenerator(asset: output.composition)
+        generator.videoComposition = output.videoComposition
+        let frame = try generator.copyCGImage(at: CMTime(seconds: 0.5, preferredTimescale: 600), actualTime: nil)
+        let topLeft = TestMedia.brightness(of: frame, region: CGRect(x: 0, y: 0, width: 0.4, height: 0.3))
+        let bottomRight = TestMedia.brightness(of: frame, region: CGRect(x: 0.6, y: 0.7, width: 0.4, height: 0.3))
+        #expect(topLeft > bottomRight + 5)
+    }
+}

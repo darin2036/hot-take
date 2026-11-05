@@ -97,6 +97,10 @@ final class StudioModel: ObservableObject {
     private var voiceReplacesOriginal = true
     private var voiceTask: Task<Void, Never>?
 
+    /// Every Studio that is alive, so an agent's edit can tell that the person has this take open.
+    private static let live = NSHashTable<StudioModel>.weakObjects()
+    static func isOpen(_ files: TakeFiles) -> Bool { live.allObjects.contains { $0.take.files == files } }
+
     init(take: TakeEntry, library: LibraryModel) {
         self.take = take
         self.library = library
@@ -107,6 +111,7 @@ final class StudioModel: ObservableObject {
         // the camera can be moved, resized or hidden.
         let hasOriginals = FileManager.default.fileExists(atPath: take.files.screenOriginal.path)
         asset = AVURLAsset(url: hasOriginals ? take.files.screenOriginal : take.files.video)
+        Self.live.add(self)
 
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.04, preferredTimescale: 600), queue: .main) { [weak self] value in
             MainActor.assumeIsolated {
@@ -898,7 +903,8 @@ final class StudioModel: ObservableObject {
         let wasPlaying = isPlaying
         let resumeAt = time
         guard let output = try? await StudioComposer.build(
-            asset: asset, project: project, burnText: false, muteOriginal: recordingVoice)
+            asset: asset, project: project, burnText: false, muteOriginal: recordingVoice,
+            watermark: WatermarkPreferences.current())
         else { return }
         let item = AVPlayerItem(asset: output.composition)
         item.audioMix = output.audioMix
@@ -1018,7 +1024,7 @@ final class StudioModel: ObservableObject {
 
     /// A copy needs saving when something was edited, or when it is to be made smaller or silent.
     func canSave(_ options: StudioSaveOptions) -> Bool {
-        ready && voice == .idle && (project.isEdited || options.quality != nil || !options.includeAudio)
+        ready && voice == .idle && (project.isEdited || options.quality != nil || !options.includeAudio || WatermarkPreferences.current() != nil)
     }
 
     /// Renders the edit to a new recording beside the original (an MP4 in your library). A copy that has
@@ -1044,9 +1050,13 @@ final class StudioModel: ObservableObject {
                 if snapshot.isEdited {
                     let defaults = UserDefaults.standard
                     let wants = { (key: String) in defaults.object(forKey: key) as? Bool ?? true }
+                    // Captions an agent wrote about a silent demo are its transcript: there is nothing spoken to listen for.
+                    let narration = NarrationCaptions.transcript(for: snapshot)
                     notes = await Pipeline.process(
                         take: copy, created: Date(),
-                        options: .init(captions: wants(Pref.captions), summary: wants(Pref.summary))
+                        options: .init(
+                            captions: narration.isEmpty ? wants(Pref.captions) : true, summary: wants(Pref.summary),
+                            suppliedTranscript: narration.isEmpty ? nil : narration)
                     ) { self.saveStatus = $0 }
                 } else {
                     // Only the file changed, not what is said: carry over the captions and notes.

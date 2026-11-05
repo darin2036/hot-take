@@ -101,7 +101,22 @@ final class RecorderModel: ObservableObject {
     private var lastTarget: RecordingTarget?
     private var contentPicker: ContentPicker?
     private var regionSelector: RegionSelector?
-    private var current: (files: TakeFiles, created: Date)?
+    private(set) var current: (files: TakeFiles, created: Date)?
+    /// Moments an agent named while recording this take (see AgentControl.swift), in seconds of the take.
+    var agentMarkers: [AgentMarker] = []
+    /// When an agent last sent a command, shown in the agent setup sheet.
+    @Published var agentLastSeen: Date?
+    /// Shows the "Let an agent record a demo" sheet over the library.
+    @Published var showingAgentSetup = false
+    /// Stops an agent's take that was never stopped. Set while an agent's recording runs, so the menus can tell.
+    @Published var agentLimit: Task<Void, Never>?
+    /// The take an agent recorded most recently, for commands that do not name one.
+    var lastAgentTake: TakeFiles?
+    /// The copy an agent saved most recently, which `hottake frames` looks at when no take is named.
+    var lastAgentRender: TakeFiles?
+    /// A recording an agent started is running. While it is, ⌘N does not stop it (an agent's synthetic keystroke could by accident);
+    /// the control bar's Stop button, the Stop Recording menu item and the recording shortcut still do.
+    var agentIsRecording: Bool { isRecording && agentLimit != nil }
     /// New takes go into the folder being viewed in the library.
     var directory: URL { directoryOverride ?? LibraryModel.shared.recordingDirectory }
     /// Used by the `--record-check` test mode to keep its take out of the library.
@@ -113,6 +128,7 @@ final class RecorderModel: ObservableObject {
         // Shortcuts that work in any app.
         GlobalHotkeys.shared.onTrigger = { [weak self] action in self?.handle(action) }
         GlobalHotkeys.shared.refresh()
+        AgentServer.shared.refresh(model: self)
     }
 
     // MARK: Shortcuts and quick capture
@@ -133,7 +149,7 @@ final class RecorderModel: ObservableObject {
     }
 
     /// The display Quick Record and screenshots use: the one recorded last if it is still there, else the main one.
-    private func quickDisplay() -> CGDirectDisplayID? {
+    func quickDisplay() -> CGDirectDisplayID? {
         let last = UserDefaults.standard.object(forKey: Pref.lastDisplay) as? Int
         return QuickCapturePlan.display(
             last: last.flatMap { UInt32(exactly: $0) }, connected: NSScreen.screens.compactMap(\.displayID), main: NSScreen.main?.displayID)
@@ -364,6 +380,7 @@ final class RecorderModel: ObservableObject {
                 camera.stopPreview()
             }
             clickRecorder.start(target: target, startedAt: takeStart)
+            agentMarkers = []
             phase = .recording(since: created)
             if !keepWindows { minimizeWindows() }
             RecordingPanel.shared.show(model: self)
@@ -490,6 +507,7 @@ final class RecorderModel: ObservableObject {
         // The timer and the click timings go back with the footage.
         if let stoppedAt = pausedAt { pausedTotal += max(0, elapsed(at: stoppedAt) - keep) }
         clickRecorder.drop(after: keep)
+        agentMarkers.removeAll { $0.time > keep }
     }
 
     /// Starts the next piece of the take, with the time paused left out.
@@ -668,7 +686,7 @@ final class RecorderModel: ObservableObject {
 
     private var hiddenWindows: [NSWindow] = []
 
-    private func stop() async {
+    func stop() async {
         if let take = cameraOnly { await finishCameraOnly(take); return }
         guard let current else { return }
         let forAgent = quickAgent || UserDefaults.standard.bool(forKey: Pref.recordForAgent)
@@ -884,7 +902,12 @@ struct MenuContent: View {
             Button("Quick Take for Agent" + Self.hint(.startAgent), systemImage: "sparkles.rectangle.stack") { model.quickRecordForAgent() }
                 .disabled(model.isBusy)
                 .help("Like Quick Record, and when you stop, copy the recording as a request for a coding agent. Talk through what you want while you show it.")
-            Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
+            Button("Let an Agent Record a Demo…", systemImage: "sparkles") {
+            model.showingAgentSetup = true
+            model.libraryRequest += 1
+        }
+        .help("Set up Claude, Codex or another agent to record and edit a demo video of an app for you.")
+        Button("Take Screenshot" + Self.hint(.screenshot), systemImage: "camera.viewfinder") { model.quickScreenshot() }
                 .disabled(model.isBusy)
         }
         Button("Speaker Notes", systemImage: "note.text") { SpeakerNotesWindow.shared.toggle() }
@@ -941,6 +964,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in LibraryModel.shared.openPackage(url) }
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) { AgentServer.shared.shutdown() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { NotificationCenter.default.post(name: .relaytakeReopen, object: nil) }

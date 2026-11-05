@@ -154,6 +154,59 @@ The result is `PROMPT.md` plus a `frames` folder in a hidden `.hot-take-agent` f
 
 Nothing is uploaded. Only the time and position of clicks are used: not which app or link, and not what you typed.
 
+## Let an agent record a demo
+
+Let an AI agent on this Mac, such as Claude Code or Codex, record a demo of an app while it uses the app, then tighten the video for you.
+
+### Set it up
+
+- Choose **Let an Agent Record a Demo…** in the menu bar or the Record menu, or click **Set Up…** on the card at the top of the library (the × hides the card; the menu items stay). The same button is in Settings ▸ **Recording**.
+- The window walks you through three steps: turn it on, connect your agent, and copy a first message to give the agent. It also shows when an agent last connected.
+- To connect, pick **Claude Code**, **Codex**, **Rovo Dev** (the command-line one; browser Rovo cannot reach your Mac) or **Claude Desktop** and click **Connect**. No Terminal needed. Hot Take adds itself to that app's own settings (`~/.claude.json` through Claude Code, `~/.codex/config.toml`, `~/.rovodev/mcp.json`, or Claude Desktop's `claude_desktop_config.json`), keeps your other settings, and saves a backup copy beside the file first. Then start a new session, or quit and reopen the app. **Disconnect** takes it out again, and **Reconnect** points it at this copy of Hot Take if you moved or rebuilt the app.
+- If Connect cannot do it, it says why. A settings file it cannot read safely is left alone. For any other app that uses MCP, choose **Other MCP** or **Terminal** and copy the text shown.
+
+### Turn it on
+
+- In that window, or in Settings ▸ **Recording**, turn on **Let local agents control recording**. It is off until you do.
+- Only programs run by your own account can connect, nothing leaves this Mac, and the recording bar stays on screen whenever an agent is recording. An agent's recording stops by itself after 30 minutes, and turning the setting off stops one that is running.
+- Screen Recording permission is still yours to give (see *Permissions and privacy*).
+- A second switch, **Also let agents use the mouse and keyboard**, is off until you turn it on. It lets an agent move the pointer, click, drag, press keys and type through `hottake`, so it can drive the app it is demoing. It acts as you, so turn it on only for an agent you trust. Hot Take checks the switch before each action, and your terminal or agent app may also need Accessibility permission in System Settings.
+- While an agent's recording is running, **⌘N** does nothing, so a stray keystroke cannot end the take. The control bar's Stop, **Record ▸ Stop Recording** and the recording shortcut still stop it.
+
+### The command
+
+Hot Take comes with a command called `hottake`, inside the app at `Hot Take.app/Contents/Helpers/hottake`. Your agent runs it. The main commands are:
+
+- `hottake displays` lists each screen with its number, name, position and size, and `hottake window --display 2` puts Hot Take's window on one.
+- `hottake screenshot` saves a picture of a screen without recording, in a private folder that is cleared after a day. Like a recording, it leaves out Hot Take's own windows unless **Show Hot Take in the recording** is on. `hottake preflight` checks a screen before recording: it names the apps that have windows on it and warns if text that looks like an email, key, phone number or address is showing (add `--term WORD` for your own words).
+- `hottake start` begins recording a screen after the usual countdown. `hottake stop` saves the take.
+- `hottake marker "Name"` names the moment it is run, such as the start of each step (`--back 3` puts it three seconds earlier). Markers become chapters in the saved copy and are how an agent says where to cut or zoom.
+- `hottake retake "Name"` says a step went wrong and is being redone. The edit cuts the failed attempt by itself, and the redo keeps the step's name, chapter and narration.
+- `hottake pause` and `hottake resume`, `hottake status`, and `hottake markers` to list them.
+- `hottake edit list.json` describes an edit: cuts for the parts where the demo waited, zooms, captions, arrows, boxes, blurs, click rings, and what to say at each marker. The edit goes into the take's Studio draft. Open the take in the Studio to look it over and change it.
+- `hottake render` saves the edited take as a new copy in your library. The original is never changed.
+- `hottake frames` takes pictures from the saved copy, the middle of each chapter (or at times you choose), and lays them out on one contact sheet so an agent can check the captions, zooms and framing. With `--scan` it also looks for text that looks sensitive in them. It covers only those moments, so you still need to watch the video.
+- `hottake discard --take NAME` moves a take an agent recorded, or a copy it saved, to the Trash. It will not touch a take you recorded and never deletes anything for good.
+- `hottake move`, `click`, `drag`, `key` and `type` use the mouse and keyboard, if you allowed that above.
+- `hottake mcp` lets an app that speaks MCP (Model Context Protocol) use the same controls as tools.
+
+The agent drives the app being recorded itself; Hot Take only records and edits. Ask your agent to use the *demo-recording* skill that comes with Hot Take (`Hot Take.app/Contents/Resources/skills`) to plan the demo first.
+
+### The voice-over script
+
+When an edit names what to say at each marker, Hot Take writes a file beside the take called `Take name.narration.md`. It lists each part of the edited video with its time and the line to read, and says when a line is too long for its part. Read it yourself, or give it to a voice tool, then add the recording to the Studio as a voiceover.
+
+### Captions for a demo with no spoken audio
+
+An agent can instead make those lines the captions. The saved copy then has the lines drawn into the picture (in the style and place the agent chose), a `.vtt` captions file, and a transcript in the Transcript tab, so the video can be followed with the sound off and search and summaries have text to use. Each line fills the part of the video that begins at its marker, split by sentence. Nothing is spoken or recognised: the words are the agent's, so read them against the video. If you open the take in the Studio and save a copy yourself, the captions are kept, and you can change their style there like any captions.
+
+### What to know
+
+- An edit is refused if the take already has edits in its Studio draft, or while you have the take open in the Studio, so nothing you did is overwritten.
+- Only screens can be recorded this way, not windows, areas or the camera.
+- Hot Take can run one recording at a time, so a demo of Hot Take itself cannot start a take inside the recording. An agent shows the Record menu and the library instead.
+- Look the finished video over before you share it. An agent cannot see whether private text appeared on screen.
+
 ## Make a bug report
 
 Turn a walkthrough of a bug into a ticket you can paste into Jira, Slack, GitHub or a service desk: a title, a short description, steps to reproduce with a picture on each step, and what you expected and what happened.
@@ -288,6 +341,16 @@ Filler words are found from the time the speech recognizer gives each word, on t
 - **Find Sensitive Info…** in the Mark popover looks for email addresses, phone numbers, street addresses, card and ID numbers, keys, tokens and passwords on screen, plus any words you list (your name, a client, a hostname). It never runs on its own: it starts only when you click **Look Through Recording**, shows a progress bar while it reads the recording, and **Stop** cancels it. It then lists what it found, with most of each item hidden. Untick anything to leave alone, click a time to see it, and **Add Blurs** turns the rest into ordinary blurs on the Marks track, in one step you can undo. Text that scrolls is covered along the way it moved, and each blur starts a moment early and ends a moment late. Anything only in parts you cut out is skipped. The text is read on this Mac with the system's text recognition, and nothing is uploaded. It can miss small, blurry or briefly shown text, so always watch the video through before you share it.
 
 ## Saving and exporting
+
+### Watermark
+
+**Settings ▸ Watermark** can put a logo and a name in one corner of every video you save or export, handy for a demo or for your own branding. It is off until you turn on **Add a watermark to saved videos**.
+
+- **Logo:** the Hot Take logo, **My image** (a PNG, JPEG or HEIC picture; a square one with a transparent background works best), or **None**.
+- **Name:** the words shown beside the logo. Leave it empty to show only the logo. The name starts as "Hot Take".
+- **Corner**, **Size** and **Opacity** control where it sits and how strong it looks. The watermark starts in the top left.
+
+The Studio preview shows the watermark, and **Save Copy**, **Share** and **File ▸ Export** draw it into the video. Your original recording is never changed, and screenshots are not watermarked. With a watermark on, you can save a copy even before you have made any edits.
 
 ### Save Copy
 

@@ -277,11 +277,14 @@ final class StudioInstruction: NSObject, AVVideoCompositionInstructionProtocol {
     let overlays: [RenderedOverlay]
     let effects: CanvasEffects?
     let camera: CameraEffect?
+    /// The watermark, already placed, drawn over everything else.
+    let watermark: CIImage?
 
     init(
         timeRange: CMTimeRange, trackID: CMPersistentTrackID, transform: CGAffineTransform, overlays: [RenderedOverlay],
-        effects: CanvasEffects? = nil, camera: CameraEffect? = nil
+        effects: CanvasEffects? = nil, camera: CameraEffect? = nil, watermark: CIImage? = nil
     ) {
+        self.watermark = watermark
         self.effects = effects
         self.camera = camera
         self.timeRange = timeRange
@@ -345,6 +348,7 @@ final class StudioCompositor: NSObject, AVVideoCompositing {
                     : rendered.image.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(opacity))])
                 image = faded.composited(over: image)
             }
+            if let watermark = instruction.watermark { image = watermark.composited(over: image) }
             Self.context.render(image, to: output, bounds: CGRect(origin: .zero, size: request.renderContext.size), colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
             request.finish(withComposedVideoFrame: output)
         }

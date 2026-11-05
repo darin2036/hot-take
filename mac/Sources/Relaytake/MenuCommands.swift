@@ -27,7 +27,7 @@ struct FileCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button(recorder.isRecording ? "Stop Recording" : "New Take") { recorder.toggle() }
-                .keyboardShortcut("n")
+                .keyboardShortcut(recorder.agentIsRecording ? nil : KeyboardShortcut("n"))
                 .disabled(recorder.isBusy)
             Button("New Folder…") { library.ask(.newFolder(parent: library.currentFolderPath)) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -99,6 +99,7 @@ struct RecordCommands: Commands {
             Divider()
             Button("Quick Record") { recorder.quickRecord() }
                 .disabled(recorder.phase != .idle)
+            Button("Let an Agent Record a Demo…") { recorder.showingAgentSetup = true; recorder.libraryRequest += 1 }
             Button("Quick Take for Agent") { recorder.quickRecordForAgent() }
                 .disabled(recorder.phase != .idle)
             Button("Take Screenshot") { recorder.quickScreenshot() }

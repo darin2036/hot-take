@@ -38,6 +38,9 @@ enum Pref {
     static let showWelcome = "showWelcome"
     /// When a recording stops, turn it into a request for a coding agent and copy it. Off by default.
     static let recordForAgent = "recordForAgent"
+    static let agentControl = "agentControl"
+    /// Also let agents move the mouse and press keys to drive the app being demoed (through `hottake click`). Off by default.
+    static let agentInput = "agentInput"
 }
 
 /// Everything configurable lives here, not in the menu-bar dropdown. Panes follow the system's own
@@ -50,6 +53,8 @@ struct SettingsView: View {
                 .tabItem { Label("Recording", systemImage: "record.circle") }
             ProcessingPane()
                 .tabItem { Label("Captions & Summary", systemImage: "captions.bubble") }
+            WatermarkPane()
+                .tabItem { Label("Watermark", systemImage: "scribble.variable") }
             PermissionsPane()
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
             LibraryPane()
@@ -115,6 +120,8 @@ private struct RecordingPane: View {
             }
 
             ShortcutsSection()
+
+            AgentControlSection()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasConnectedNotification)) { _ in microphones = Microphone.available() }
         .onReceive(NotificationCenter.default.publisher(for: AVCaptureDevice.wasDisconnectedNotification)) { _ in microphones = Microphone.available() }
