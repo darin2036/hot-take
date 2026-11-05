@@ -13,7 +13,7 @@ import Testing
 
     @Test func everyClientGetsAnInstructionAndAPathThatIsQuotedForIt() {
         let claude = AgentSetup.snippet(for: .claudeCode, helper: helper)
-        #expect(claude.text == "claude mcp add hottake -- '/Applications/Hot Take.app/Contents/Helpers/hottake' mcp")
+        #expect(claude.text == "claude mcp add --scope user hottake -- '/Applications/Hot Take.app/Contents/Helpers/hottake' mcp")
         let codex = AgentSetup.snippet(for: .codex, helper: helper)
         #expect(codex.text.contains("[mcp_servers.hottake]"))
         #expect(codex.text.contains("command = \"/Applications/Hot Take.app/Contents/Helpers/hottake\""))

@@ -12,7 +12,7 @@ extension RecorderModel {
     /// An agent's take that is never stopped is stopped and saved after this long.
     nonisolated static let agentTakeLimit: Duration = .seconds(30 * 60)
 
-    private var agentState: String {
+    var agentState: String {
         switch phase {
         case .idle: "idle"
         case .recording: paused ? "paused" : "recording"
@@ -26,13 +26,19 @@ extension RecorderModel {
         }
         agentLastSeen = Date()
         switch command {
-        case .ping: return AgentResponse(state: agentState)
+        case .ping: return AgentResponse(state: agentState, inputAllowed: AgentServer.inputAllowed)
         case .status: return agentStatus()
+        case .displays: return agentDisplays()
+        case .screenshot: return await agentScreenshot(request)
+        case .preflight: return await agentPreflight(request)
+        case .frames: return await agentFrames(request)
+        case .discard: return await agentDiscard(request)
+        case .window: return await agentMoveWindow(display: request.display)
         case .start: return await agentStart(display: request.display)
         case .stop: return await agentStop()
         case .pause: return await agentPause()
         case .resume: return await agentResume()
-        case .marker: return agentMarker(named: request.name)
+        case .marker: return agentMarker(named: request.name, back: request.back)
         case .markers: return agentMarkerList(take: request.take)
         case .edit: return await agentEdit(request)
         case .render: return await agentRender(request)
@@ -51,7 +57,8 @@ extension RecorderModel {
     private func agentStatus() -> AgentResponse {
         AgentResponse(
             state: agentState, take: current?.files.baseName, video: current?.files.video.path,
-            seconds: isRecording ? elapsed(at: Date()) : nil, markers: isRecording ? agentMarkers : nil)
+            seconds: isRecording ? elapsed(at: Date()) : nil, markers: isRecording ? agentMarkers : nil,
+            inputAllowed: AgentServer.inputAllowed)
     }
 
     private func agentStart(display: Int?) async -> AgentResponse {
@@ -122,10 +129,12 @@ extension RecorderModel {
         return AgentResponse(state: agentState, take: current?.files.baseName)
     }
 
-    private func agentMarker(named raw: String?) -> AgentResponse {
+    private func agentMarker(named raw: String?, back: Double?) -> AgentResponse {
         guard isRecording else { return .failure("Markers can only be added while recording.") }
         let name = AgentMarkerStore.cleanedName(raw) ?? "Marker \(agentMarkers.count + 1)"
-        let marker = AgentMarker(name: name, time: elapsed(at: Date()))
+        // `back` places it a few seconds earlier, for a step that was already under way when the marker was sent.
+        let now = elapsed(at: Date())
+        let marker = AgentMarker(name: name, time: max(0, now - min(max(0, back ?? 0), 120)))
         agentMarkers.append(marker)
         return AgentResponse(state: agentState, take: current?.files.baseName, seconds: marker.time, markers: [marker])
     }
@@ -139,7 +148,7 @@ extension RecorderModel {
     // MARK: Takes
 
     /// The take a command is about: the one named, else the one an agent recorded last, else the newest in the library.
-    private func agentTake(named name: String?) -> TakeFiles? {
+    func agentTake(named name: String?) -> TakeFiles? {
         LibraryModel.shared.refresh()
         if let name, !name.isEmpty {
             return LibraryModel.shared.takes.first { $0.files.baseName == name || $0.id == name }?.files
@@ -206,7 +215,9 @@ extension RecorderModel {
         else { return .failure("That take has no edits to save yet. Send an edit first.") }
 
         let markers = AgentMarkerStore.load(for: files)
-        let chapters = request.edit?.chapters == false ? [] : ChapterList.remapped(AgentMarkerStore.chapters(from: markers), through: project.cuts)
+        // A retake stands for the step it redoes, so the chapters carry the step's name and not the failed attempt.
+        let chapterMarkers = AgentRetakes.resolve(markers).markers
+        let chapters = request.edit?.chapters == false ? [] : ChapterList.remapped(AgentMarkerStore.chapters(from: chapterMarkers), through: project.cuts)
         let copy = TakeFiles(directory: files.directory, baseName: TakeLibrary.uniqueCopyName(basedOn: files.baseName, in: files.directory))
         let defaults = UserDefaults.standard
         let wants = { (key: String) in defaults.object(forKey: key) as? Bool ?? true }
@@ -214,13 +225,21 @@ extension RecorderModel {
             try await StudioSaver.render(
                 asset: asset, project: project, to: copy.video, format: .mp4, options: .stored, chapters: chapters
             ) { _ in }
+            // Captions that came from the agent's narration are the transcript: nothing is spoken, so nothing is listened for.
+            let narration = NarrationCaptions.transcript(for: project)
             var notes = await Pipeline.process(
-                take: copy, created: Date(), options: .init(captions: wants(Pref.captions), summary: wants(Pref.summary))
+                take: copy, created: Date(),
+                options: .init(
+                    captions: narration.isEmpty ? wants(Pref.captions) : true, summary: wants(Pref.summary),
+                    suppliedTranscript: narration.isEmpty ? nil : narration)
             ) { _ in }
             if !chapters.isEmpty {
                 try? TakeLibrary.saveChapters(chapters, to: copy, created: Date(), duration: project.outputDuration, chaptersEnabled: true)
             }
             try? TakeLibrary.link(copy: copy, to: files, created: Date())
+            // Marks the copy as an agent's, so `hottake discard` may put it away later (and nothing else it did not make).
+            try? AgentMarkerStore.save([], for: copy)
+            lastAgentRender = copy
             StudioDraftStore(files: files).discard()
             LibraryModel.shared.refresh()
             LibraryModel.shared.select(files: copy)
@@ -237,12 +256,16 @@ extension RecorderModel {
 /// Settings ▸ Recording: the switch that lets agents on this Mac in. Off unless the person turns it on.
 struct AgentControlSection: View {
     @AppStorage(Pref.agentControl) private var enabled = false
+    @AppStorage(Pref.agentInput) private var inputEnabled = false
 
     var body: some View {
         Section {
             Toggle("Let local agents control recording", isOn: $enabled)
                 .help("Lets programs you run on this Mac, such as Claude Code or Codex, start and stop a screen recording, mark moments in it and edit it, using the hottake command. The recording bar stays on screen while they record. Nothing leaves this Mac.")
                 .onChange(of: enabled) { _, _ in AgentServer.shared.refresh() }
+            Toggle("Also let agents use the mouse and keyboard", isOn: $inputEnabled)
+                .disabled(!enabled)
+                .help("Lets an agent move the pointer, click and type through the hottake command, so it can drive the app it is demoing. It acts as you, so only turn it on for an agent you trust. Off until you turn it on.")
             LabeledContent("Setup") {
                 Button("Set Up an Agent…") { RecorderModel.current?.showingAgentSetup = true; RecorderModel.current?.libraryRequest += 1 }
                     .help("Shows how to connect Claude Code, Codex or another agent, with text to copy.")

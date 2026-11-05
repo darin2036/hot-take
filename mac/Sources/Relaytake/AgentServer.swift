@@ -19,6 +19,9 @@ final class AgentServer: @unchecked Sendable {
     /// Whether the person has let local agents in.
     static var isEnabled: Bool { UserDefaults.standard.bool(forKey: Pref.agentControl) }
 
+    /// Whether the person also let agents use the mouse and keyboard (a second switch, off until they turn it on).
+    static var inputAllowed: Bool { isEnabled && UserDefaults.standard.bool(forKey: Pref.agentInput) }
+
     /// Starts or stops the listener to match the setting. Safe to call whenever the setting may have changed.
     @MainActor
     func refresh(model: RecorderModel? = nil) {

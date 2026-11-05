@@ -39,8 +39,13 @@ struct AgentSetupSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @AppStorage(Pref.agentControl) private var enabled = false
+    @AppStorage(Pref.agentInput) private var inputEnabled = false
     @State private var client = AgentSetup.Client.claudeCode
     @State private var copied: String?
+    @State private var connection = AgentConnector.State.notConnected
+    @State private var connecting = false
+    @State private var result: String?
+    @State private var failed = false
 
     /// The `hottake` command inside this app.
     private var helper: String { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/hottake").path }
@@ -63,6 +68,11 @@ struct AgentSetupSheet: View {
                     step(1, "Turn it on", trailing: status) {
                         Toggle("Let local agents control recording", isOn: $enabled)
                             .onChange(of: enabled) { _, _ in AgentServer.shared.refresh() }
+                        Toggle("Also let agents use the mouse and keyboard", isOn: $inputEnabled)
+                            .disabled(!enabled)
+                            .help("Lets an agent move the pointer, click and type through the hottake command, so it can drive the app it is demoing. It acts as you, so only turn it on for an agent you trust. Off until you turn it on.")
+                        Text("Optional. Without it an agent records and edits but cannot click or type for you.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
 
                     step(2, "Connect your agent, once") {
@@ -71,7 +81,13 @@ struct AgentSetupSheet: View {
                         }
                         .pickerStyle(.segmented).labelsHidden()
                         let snippet = AgentSetup.snippet(for: client, helper: helper)
-                        Text(snippet.instruction).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if AgentConnector.supportsConnect(client) {
+                            connectRow
+                            Text("Or add it yourself: " + snippet.instruction.prefix(1).lowercased() + snippet.instruction.dropFirst())
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(snippet.instruction).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
                         codeBox(snippet.text, label: "Copy")
                         if !helperExists {
                             Label("This copy of Hot Take does not have the hottake command inside it. Build the app with scripts/bundle.sh.", systemImage: "exclamationmark.triangle")
@@ -104,6 +120,50 @@ struct AgentSetupSheet: View {
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
         .frame(width: Self.contentWidth + 40, height: 640)
+        .onAppear { refreshConnection() }
+        .onChange(of: client) { _, _ in result = nil; failed = false; refreshConnection() }
+    }
+
+    private func refreshConnection() { connection = AgentConnector.state(of: client, helper: helper) }
+
+    /// The Connect button for the chosen agent, with what it did or why it could not.
+    @ViewBuilder private var connectRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button(connection == .notConnected ? "Connect \(client.rawValue)" : "Reconnect") { run { try await AgentConnector.connect(client, helper: helper) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(connecting || !helperExists)
+                    .help("Adds Hot Take to \(AgentConnector.displayPath(client)). Your other settings there are kept, and a backup copy is saved first.")
+                if connection != .notConnected {
+                    Button("Disconnect") { run { try await AgentConnector.disconnect(client) } }
+                        .disabled(connecting)
+                        .help("Removes Hot Take from \(AgentConnector.displayPath(client)).")
+                }
+                if connecting { ProgressView().controlSize(.small) }
+                Spacer(minLength: 0)
+            }
+            if let result {
+                Label(result, systemImage: failed ? "exclamationmark.triangle" : "checkmark.circle.fill")
+                    .font(.callout).foregroundStyle(failed ? Color.orange : Color.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if connection == .connected {
+                Label("Connected. \(AgentConnector.restartHint(client))", systemImage: "checkmark.circle.fill")
+                    .font(.callout).foregroundStyle(.green)
+            } else if connection == .otherCopy {
+                Label("Connected to a different copy of Hot Take. Click Reconnect to use this one.", systemImage: "exclamationmark.circle")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func run(_ action: @escaping () async throws -> String) {
+        connecting = true
+        result = nil
+        Task {
+            do { result = try await action(); failed = false } catch { result = error.localizedDescription; failed = true }
+            connecting = false
+            refreshConnection()
+        }
     }
 
     private static let contentWidth: CGFloat = 580

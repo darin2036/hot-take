@@ -8,6 +8,18 @@ import Foundation
 /// What an agent can ask for.
 public enum AgentCommand: String, CaseIterable, Codable, Sendable {
     case ping, status, start, stop, pause, resume, marker, markers, edit, render
+    /// Where each display is, for aiming clicks and choosing which to record.
+    case displays
+    /// One picture of a screen, without recording, for the agent to look at.
+    case screenshot
+    /// Look at a screen before recording: which apps have windows on it, and whether sensitive text is showing.
+    case preflight
+    /// Pictures from a finished video (and an optional sensitive-text check of them) so an agent can verify an edit.
+    case frames
+    /// Move an agent's own test take to the Trash.
+    case discard
+    /// Put Hot Take's window on a chosen display.
+    case window
 }
 
 /// A named moment in a take, in seconds of the recording (paused time is not counted, so it is also a moment of the video).
@@ -21,6 +33,13 @@ public struct AgentMarker: Codable, Equatable, Sendable {
     }
 }
 
+/// One picture taken from a video: where it is and which second it shows.
+public struct AgentFrame: Codable, Equatable, Sendable {
+    public var time: Double
+    public var path: String
+    public init(time: Double, path: String) { self.time = time; self.path = path }
+}
+
 /// One request. Which fields matter depends on `command`.
 public struct AgentRequest: Codable, Equatable, Sendable {
     public var command: String
@@ -32,13 +51,31 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     public var take: String?
     /// `edit`: the changes to make.
     public var edit: EditList?
+    /// `marker`: place the marker this many seconds before now (for a step already begun).
+    public var back: Double?
+    /// `frames`: the moments to take pictures of, in seconds of the video.
+    public var times: [Double]?
+    /// `frames`: also look for sensitive text in the pictures.
+    public var scan: Bool?
+    /// `preflight` and `frames` with `scan`: extra words to treat as sensitive (a name, a client, a hostname).
+    public var terms: [String]?
+    /// `screenshot`: the widest the picture should be, in pixels (it is only ever scaled down).
+    public var width: Int?
 
-    public init(command: String, display: Int? = nil, name: String? = nil, take: String? = nil, edit: EditList? = nil) {
+    public init(
+        command: String, display: Int? = nil, name: String? = nil, take: String? = nil, edit: EditList? = nil,
+        back: Double? = nil, times: [Double]? = nil, scan: Bool? = nil, terms: [String]? = nil, width: Int? = nil
+    ) {
         self.command = command
         self.display = display
         self.name = name
         self.take = take
         self.edit = edit
+        self.back = back
+        self.times = times
+        self.scan = scan
+        self.terms = terms
+        self.width = width
     }
 }
 
@@ -58,11 +95,28 @@ public struct AgentResponse: Codable, Equatable, Sendable {
     public var output: String?
     /// `edit`: the narration script with timings (`narration.md` beside the take's files).
     public var narration: String?
+    /// `displays`: every display, numbered as `start --display` numbers them.
+    public var displays: [AgentDisplay]?
+    /// `ping` and `status`: whether the person also let agents use the mouse and keyboard (Settings ▸ Recording).
+    public var inputAllowed: Bool?
+    /// `screenshot`: the PNG that was saved (in a private folder, removed after a day).
+    public var image: String?
+    /// `preflight`: the apps with windows on that display.
+    public var apps: [String]?
+    /// `preflight` and `frames` with `scan`: sensitive text that was seen, with most of each hidden.
+    public var findings: [AgentFinding]?
+    /// `frames`: the pictures, in order, and the contact sheet that lays them out together.
+    public var frames: [AgentFrame]?
+    public var contactSheet: String?
+    /// `discard`: the takes moved to the Trash.
+    public var discarded: [String]?
 
     public init(
         ok: Bool = true, error: String? = nil, state: String? = nil, take: String? = nil, video: String? = nil,
         seconds: Double? = nil, markers: [AgentMarker]? = nil, applied: [String]? = nil, warnings: [String]? = nil,
-        output: String? = nil, narration: String? = nil
+        output: String? = nil, narration: String? = nil, displays: [AgentDisplay]? = nil, inputAllowed: Bool? = nil,
+        image: String? = nil, apps: [String]? = nil, findings: [AgentFinding]? = nil, frames: [AgentFrame]? = nil,
+        contactSheet: String? = nil, discarded: [String]? = nil
     ) {
         self.ok = ok
         self.error = error
@@ -75,6 +129,14 @@ public struct AgentResponse: Codable, Equatable, Sendable {
         self.warnings = warnings
         self.output = output
         self.narration = narration
+        self.displays = displays
+        self.inputAllowed = inputAllowed
+        self.image = image
+        self.apps = apps
+        self.findings = findings
+        self.frames = frames
+        self.contactSheet = contactSheet
+        self.discarded = discarded
     }
 
     public static func failure(_ message: String) -> AgentResponse { AgentResponse(ok: false, error: message) }

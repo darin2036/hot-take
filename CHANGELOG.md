@@ -19,7 +19,11 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 **For agents and bug reports**
 - **For an agent** turns a take into a request for Claude Code, Codex or Cursor: your narration beside a picture of each click, a transcript and, with on-device intelligence, a goal and steps. Saved as `PROMPT.md` and copied ready to paste.
 - **Local agent control** (off until you turn on Settings ▸ Recording ▸ Let local agents control recording): an agent such as Claude Code or Codex can run the new `hottake` command (or `hottake mcp`) to record a screen, name moments with markers, describe an edit (cuts for the slow parts, zooms, captions, marks, a voice-over script) that lands in the Studio draft, and save it as a new copy. Comes with a *demo-recording* skill.
-- **Let an Agent Record a Demo…** (menu bar and Record menu, a card at the top of the library, and Settings) opens a setup window: turn agent control on, copy the connection for Claude Code, Codex, Rovo Dev or another MCP app, copy a first message for the agent, and see when one last connected.
+- **Let an Agent Record a Demo…** (menu bar and Record menu, a card at the top of the library, and Settings) opens a setup window: turn agent control on, connect Claude Code, Codex, Rovo Dev or Claude Desktop with one **Connect** button (or copy the connection for another MCP app), copy a first message for the agent, and see when one last connected.
+- **Agents can see and check their work:** `hottake displays`, `screenshot`, `preflight` (which apps and what sensitive-looking text are on a screen before recording), `window`, `frames` (pictures and a contact sheet from the finished video, with an optional sensitive-text scan) and `discard` (moves an agent's own test takes to the Trash).
+- **Agents can click and type** through `hottake` (`move`, `click`, `drag`, `key`, `type`), only after a second Settings switch, "Also let agents use the mouse and keyboard", that is off until you turn it on.
+- **Captions for a demo with no spoken audio:** an agent can turn the lines it writes for each step into captions drawn in the video, a captions file and the saved copy's transcript (`narrationCaptions` in an edit).
+- **Retakes and tidier edits for agents:** `hottake retake` cuts a failed attempt for you, `marker --back` places a marker earlier, and `maxZoomsPerMinute` keeps automatic zooms from piling up.
 - **Bug Report** on the Watch page drafts a ticket (title, summary, steps with pictures, expected and actual) to copy as Markdown, Jira, Slack or plain text.
 
 **Studio**
@@ -38,6 +42,7 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 - Find in Transcript (⌘F, ⌘G, ⇧⌘G) and line corrections from the context menu.
 
 **App**
+- Optional watermark (a logo and a name in any corner) drawn into saved copies and exports, set in Settings ▸ Watermark.
 - Launch welcome with a flame-icon animation; click or press a key to skip. It can be turned off in Settings ▸ Library.
 - Help ▸ Hot Take Help (⌘?), a searchable help center, and Help ▸ What's New, which shows this change log.
 - File ▸ Export: video as MP4, MOV or WebM, and the transcript as Markdown.
@@ -51,6 +56,7 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 - The Edit tab is gone; trim and splice in the Studio.
 - Splice with the Audio track selected cuts sound only; with nothing selected it cuts both.
 - Transcript **Remake** is now **Regenerate**.
+- While an agent's recording runs, ⌘N no longer stops it; the Stop button, Record ▸ Stop Recording and the recording shortcut still do.
 - Info panel: file details are collapsed by default, with only **Show in Folder**.
 - Chinese and Japanese captions wrap at a line length.
 - Each build is numbered by its commit count so the system refreshes the app icon.

@@ -7,10 +7,10 @@ import ScreenCaptureKit
 /// own windows (and, if asked, Notification Center) out of it.
 @MainActor
 enum ScreenshotTaker {
-    static func capture(_ target: RecordingTarget, hideNotifications: Bool) async throws -> CGImage {
+    static func capture(_ target: RecordingTarget, hideNotifications: Bool, includeOwnApp: Bool = false) async throws -> CGImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let leftOut = Set(CaptureExclusions.bundleIdentifiers(
-            ownApp: Bundle.main.bundleIdentifier, includeOwnApp: false, hideNotifications: hideNotifications))
+            ownApp: Bundle.main.bundleIdentifier, includeOwnApp: includeOwnApp, hideNotifications: hideNotifications))
         let excluded = content.applications.filter { leftOut.contains($0.bundleIdentifier) }
 
         func display(_ id: CGDirectDisplayID) throws -> SCDisplay {

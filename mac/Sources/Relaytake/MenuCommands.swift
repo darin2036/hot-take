@@ -27,7 +27,7 @@ struct FileCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button(recorder.isRecording ? "Stop Recording" : "New Take") { recorder.toggle() }
-                .keyboardShortcut("n")
+                .keyboardShortcut(recorder.agentIsRecording ? nil : KeyboardShortcut("n"))
                 .disabled(recorder.isBusy)
             Button("New Folder…") { library.ask(.newFolder(parent: library.currentFolderPath)) }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

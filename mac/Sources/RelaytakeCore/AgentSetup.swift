@@ -8,6 +8,7 @@ public enum AgentSetup {
         case claudeCode = "Claude Code"
         case codex = "Codex"
         case rovoDev = "Rovo Dev"
+        case claudeDesktop = "Claude Desktop"
         case mcp = "Other MCP"
         case command = "Terminal"
 
@@ -36,7 +37,7 @@ public enum AgentSetup {
         case .claudeCode:
             return Snippet(
                 instruction: "Paste this into Terminal once, then start a new Claude Code session.",
-                text: "claude mcp add hottake -- \(shellQuoted(helper)) mcp")
+                text: "claude mcp add --scope user hottake -- \(shellQuoted(helper)) mcp")
         case .codex:
             return Snippet(
                 instruction: "Add this to ~/.codex/config.toml, then restart Codex.",
@@ -45,6 +46,10 @@ public enum AgentSetup {
             return Snippet(
                 instruction: "Add this to ~/.rovodev/mcp.json (Terminal: acli rovodev mcp opens it), then start a new Rovo Dev session. This is the command-line Rovo Dev; browser Rovo cannot reach your Mac.",
                 text: "{\n  \"mcpServers\": {\n    \"hottake\": {\n      \"command\": \(quoted(helper)),\n      \"args\": [\"mcp\"],\n      \"transport\": \"stdio\"\n    }\n  }\n}")
+        case .claudeDesktop:
+            return Snippet(
+                instruction: "Add this to Claude Desktop's config (Settings ▸ Developer ▸ Edit Config), then quit and reopen Claude.",
+                text: "{\n  \"mcpServers\": {\n    \"hottake\": {\n      \"command\": \(quoted(helper)),\n      \"args\": [\"mcp\"]\n    }\n  }\n}")
         case .mcp:
             return Snippet(
                 instruction: "Add this to your app's MCP server settings, then restart it. In Claude Desktop that is Settings ▸ Developer ▸ Edit Config.",

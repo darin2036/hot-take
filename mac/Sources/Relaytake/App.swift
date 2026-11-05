@@ -108,10 +108,15 @@ final class RecorderModel: ObservableObject {
     @Published var agentLastSeen: Date?
     /// Shows the "Let an agent record a demo" sheet over the library.
     @Published var showingAgentSetup = false
-    /// Stops an agent's take that was never stopped.
-    var agentLimit: Task<Void, Never>?
+    /// Stops an agent's take that was never stopped. Set while an agent's recording runs, so the menus can tell.
+    @Published var agentLimit: Task<Void, Never>?
     /// The take an agent recorded most recently, for commands that do not name one.
     var lastAgentTake: TakeFiles?
+    /// The copy an agent saved most recently, which `hottake frames` looks at when no take is named.
+    var lastAgentRender: TakeFiles?
+    /// A recording an agent started is running. While it is, ⌘N does not stop it (an agent's synthetic keystroke could by accident);
+    /// the control bar's Stop button, the Stop Recording menu item and the recording shortcut still do.
+    var agentIsRecording: Bool { isRecording && agentLimit != nil }
     /// New takes go into the folder being viewed in the library.
     var directory: URL { directoryOverride ?? LibraryModel.shared.recordingDirectory }
     /// Used by the `--record-check` test mode to keep its take out of the library.

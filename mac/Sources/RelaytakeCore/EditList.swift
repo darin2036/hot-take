@@ -113,6 +113,18 @@ public struct EditList: Codable, Equatable, Sendable {
     public var narration: [String: String]?
     /// Zoom in around each group of recorded clicks, as the Studio's Auto Zoom does. Zooms listed below are added to these.
     public var autoZoom: Bool?
+    /// With `autoZoom`, keep no more than about this many of the automatic zooms in each minute (the rest are dropped).
+    public var maxZoomsPerMinute: Double?
+    /// Fold each `Retake: Name` marker into the step it redoes: the failed attempt is cut and the retake takes the step's name.
+    /// On unless this is false.
+    public var autoRetakes: Bool?
+    /// Turn the `narration` lines into captions drawn in the picture, a `.vtt` file and the saved copy's transcript, for a demo with no
+    /// spoken audio. Each line fills the part of the video that begins at its marker. Needs `narration`.
+    public var narrationCaptions: Bool?
+    /// With `narrationCaptions`: `classic` (the default), `bold`, `minimal` or `highlight`.
+    public var captionStyle: String?
+    /// With `narrationCaptions`: `bottom` (the default), `middle` or `top`.
+    public var captionPosition: String?
     /// Draw a ring at each recorded click.
     public var clickRings: Bool?
     /// Markers become chapters of the saved copy unless this is false.
@@ -123,8 +135,11 @@ public struct EditList: Codable, Equatable, Sendable {
     public init(
         keep: Cut? = nil, cuts: [Cut]? = nil, zooms: [Zoom]? = nil, texts: [Text]? = nil, shapes: [Shape]? = nil,
         autoZoom: Bool? = nil, clickRings: Bool? = nil, narration: [String: String]? = nil, chapters: Bool? = nil,
-        replace: Bool? = nil
+        replace: Bool? = nil, maxZoomsPerMinute: Double? = nil, autoRetakes: Bool? = nil, narrationCaptions: Bool? = nil,
+        captionStyle: String? = nil, captionPosition: String? = nil
     ) {
+        self.narrationCaptions = narrationCaptions; self.captionStyle = captionStyle; self.captionPosition = captionPosition
+        self.maxZoomsPerMinute = maxZoomsPerMinute; self.autoRetakes = autoRetakes
         self.autoZoom = autoZoom; self.clickRings = clickRings
         self.keep = keep; self.cuts = cuts; self.zooms = zooms; self.texts = texts; self.shapes = shapes
         self.narration = narration; self.chapters = chapters; self.replace = replace
@@ -154,11 +169,24 @@ public enum EditListApplier {
     /// Applies `list` to `project`, which must have no edits yet (cuts are made on the original's timeline). Anything
     /// that cannot be done is skipped and reported, never half-applied.
     public static func apply(
-        _ list: EditList, to start: StudioProject, markers: [AgentMarker], clicks: [ClickEvent]
+        _ list: EditList, to start: StudioProject, markers allMarkers: [AgentMarker], clicks: [ClickEvent]
     ) -> (project: StudioProject, outcome: EditListOutcome) {
         var project = start
         var outcome = EditListOutcome()
         let duration = project.cuts.duration
+
+        // 0. Retakes: each failed attempt is cut and its retake stands for the step.
+        var markers = allMarkers
+        var retakeCuts: [TimeSpan] = []
+        if list.autoRetakes != false {
+            let resolved = AgentRetakes.resolve(allMarkers)
+            markers = resolved.markers
+            retakeCuts = resolved.cuts.map { TimeSpan(start: max(0, $0.start), end: min(duration, $0.end)) }
+            outcome.warnings += resolved.warnings
+            if !retakeCuts.isEmpty {
+                outcome.applied.append(retakeCuts.count == 1 ? "Cut 1 failed attempt that was redone as a retake." : "Cut \(retakeCuts.count) failed attempts that were redone as retakes.")
+            }
+        }
 
         // 1. Cuts, in the original's time. Merged, then removed last-to-first so earlier ones do not move.
         var spans: [TimeSpan] = []
@@ -177,6 +205,7 @@ public enum EditListApplier {
             if kept.end < duration { spans.append(TimeSpan(start: kept.end, end: duration)) }
         }
         for cut in list.cuts ?? [] { if let found = span(cut) { spans.append(found) } }
+        spans += retakeCuts.filter { $0.end - $0.start >= EditModel.minimumSegment }
         let merged = mergedSpans(spans)
         var removed = 0.0
         for range in merged.reversed() {
@@ -209,6 +238,13 @@ public enum EditListApplier {
         }
         if list.autoZoom == true {
             project.generateZooms(from: clicks)
+            if let limit = list.maxZoomsPerMinute, limit > 0 {
+                let before = project.zooms.count
+                project.zooms = ZoomCap.thinned(project.zooms, maxPerMinute: limit)
+                if project.zooms.count < before {
+                    outcome.applied.append("Kept \(project.zooms.count) of \(before) automatic zooms (at most \(Int(limit)) a minute).")
+                }
+            }
             outcome.applied.append(project.zooms.isEmpty ? "Auto zoom found no clicks to zoom on." : "Added \(project.zooms.count) zoom\(project.zooms.count == 1 ? "" : "s") on the clicks.")
         }
 
@@ -275,6 +311,25 @@ public enum EditListApplier {
         if shapeCount > 0 { outcome.applied.append("Added \(shapeCount) mark\(shapeCount == 1 ? "" : "s").") }
 
         outcome.beats = beats(markers: markers, narration: list.narration ?? [:], cuts: project.cuts, warnings: &outcome.warnings)
+
+        // 5. Narration as captions.
+        if list.narrationCaptions == true {
+            let style = list.captionStyle.flatMap { CaptionStyle(rawValue: $0.lowercased()) } ?? .classic
+            let position = list.captionPosition.flatMap { CaptionPosition(rawValue: $0.lowercased()) } ?? .bottom
+            if let named = list.captionStyle, CaptionStyle(rawValue: named.lowercased()) == nil {
+                outcome.warnings.append("“\(named)” is not a caption style; used classic. Choose classic, bold, minimal or highlight.")
+            }
+            if let named = list.captionPosition, CaptionPosition(rawValue: named.lowercased()) == nil {
+                outcome.warnings.append("“\(named)” is not a caption position; used bottom. Choose bottom, middle or top.")
+            }
+            let cues = NarrationCaptions.sourceCues(beats: outcome.beats, cuts: project.cuts)
+            if cues.isEmpty {
+                outcome.warnings.append("narrationCaptions is on, but no narration line landed on the video, so there are no captions. Write narration for the markers.")
+            } else {
+                project.captions = StudioCaptions(style: style, position: position, cues: cues, fromNarration: true)
+                outcome.applied.append("Narration became \(cues.count) caption line\(cues.count == 1 ? "" : "s") drawn in the video, and the copy's transcript and captions file.")
+            }
+        }
         if list.chapters != false, !markers.isEmpty { outcome.applied.append("Markers will be chapters of the saved copy.") }
         return (project, outcome)
     }
@@ -309,10 +364,16 @@ public enum EditListApplier {
             let end = index + 1 < starts.count ? starts[index + 1].time : total
             // A part that was cut away on purpose (the wait for something to load) has no room left and drops out.
             guard end - item.time > 0.05 else { continue }
-            let line = narration.first { $0.key.caseInsensitiveCompare(item.name) == .orderedSame }?.value
+            let line = narration.first { key, _ in
+                key.caseInsensitiveCompare(item.name) == .orderedSame
+                    || AgentRetakes.beatName(of: key)?.caseInsensitiveCompare(item.name) == .orderedSame
+            }?.value
             result.append(NarrationBeat(name: item.name, start: item.time, end: end, text: line))
         }
-        for name in narration.keys where !markers.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+        for name in narration.keys where !markers.contains(where: { marker in
+            let target = AgentRetakes.beatName(of: name) ?? name
+            return marker.name.caseInsensitiveCompare(name) == .orderedSame || marker.name.caseInsensitiveCompare(target) == .orderedSame
+        }) {
             warnings.append("Narration for “\(name)” was not used: no marker has that name.")
         }
         return result

@@ -49,6 +49,10 @@ public struct TakeFiles: Equatable, Sendable {
     public var markers: URL {
         directory.appendingPathComponent(".hot-take-markers", isDirectory: true).appendingPathComponent(baseName + ".markers.json")
     }
+    /// Pictures an agent asked for from this take to check an edit, out of sight beside it.
+    public var framesDirectory: URL {
+        directory.appendingPathComponent(".hot-take-frames", isDirectory: true).appendingPathComponent(baseName, isDirectory: true)
+    }
     /// The voice-over script an agent's edit wrote, beside the take where a person can read it.
     public var narration: URL { directory.appendingPathComponent(baseName).appendingPathExtension("narration.md") }
     public var screenOriginal: URL { originalsDirectory.appendingPathComponent(baseName + ".screen.mp4") }

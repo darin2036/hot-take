@@ -8,6 +8,8 @@ enum Pipeline {
     struct Options {
         var captions: Bool
         var summary: Bool
+        /// Words to use as the transcript instead of listening to the audio: text an agent wrote about a take with no spoken audio.
+        var suppliedTranscript: [CaptionSegment]?
     }
 
     static func process(
@@ -17,7 +19,14 @@ enum Pipeline {
         var transcript: [CaptionSegment] = []
         var words: [TimedWord] = []
 
-        if options.captions || options.summary {
+        if let supplied = options.suppliedTranscript, !supplied.isEmpty {
+            transcript = supplied
+            if options.captions {
+                do { try Captions.webVTT(transcript).write(to: take.captions, atomically: true, encoding: .utf8) } catch {
+                    notes.append("Captions: \(error.localizedDescription)")
+                }
+            }
+        } else if options.captions || options.summary {
             await progress("Transcribing…")
             do {
                 let heard = try await Transcriber.listen(to: take.video) { text in
