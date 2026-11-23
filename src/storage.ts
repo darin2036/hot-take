@@ -7,6 +7,7 @@ export interface Recording {
   chunks: number;
   duration: number;
   status: 'recording' | 'ready' | 'interrupted';
+  markers?: {time: number; title: string}[];
 }
 interface Chunk {
   recordingId: string;
@@ -72,7 +73,12 @@ export async function append(id: string, blob: Blob) {
   };
   await completion;
 }
-export async function finalize(id: string, duration: number, interrupted = false) {
+export async function finalize(
+  id: string,
+  duration: number,
+  interrupted = false,
+  markers?: {time: number; title: string}[],
+) {
   const db = await openDB();
   const tx = db.transaction('recordings', 'readwrite');
   const completion = done(tx);
@@ -80,7 +86,12 @@ export async function finalize(id: string, duration: number, interrupted = false
   const req = store.get(id);
   req.onsuccess = () => {
     if (req.result)
-      store.put({...req.result, duration, status: interrupted ? 'interrupted' : 'ready'});
+      store.put({
+        ...req.result,
+        duration,
+        status: interrupted ? 'interrupted' : 'ready',
+        ...(markers?.length ? {markers} : {}),
+      });
   };
   await completion;
 }
@@ -144,4 +155,29 @@ export async function readPrefix(row: Recording, limit = 8 * 1024 * 1024): Promi
       item.continue();
     };
   });
+}
+
+/** Store an existing video file as a take, in bounded slices, so it behaves like a recording. */
+export async function importBlob(file: Blob, title: string, mime: string, duration: number) {
+  const id = crypto.randomUUID();
+  await save({
+    id,
+    title,
+    created: Date.now(),
+    mime,
+    size: 0,
+    chunks: 0,
+    duration: 0,
+    status: 'recording',
+  });
+  try {
+    const slice = 8 * 1024 * 1024;
+    for (let at = 0; at < file.size; at += slice)
+      await append(id, file.slice(at, at + slice, mime));
+    await finalize(id, duration);
+  } catch (error) {
+    await remove(id);
+    throw error;
+  }
+  return id;
 }

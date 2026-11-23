@@ -21,6 +21,9 @@ import trash from 'lucide-static/icons/trash-2.svg?raw';
 import refresh from 'lucide-static/icons/refresh-cw.svg?raw';
 import shield from 'lucide-static/icons/shield-check.svg?raw';
 import check from 'lucide-static/icons/check.svg?raw';
+import flag from 'lucide-static/icons/flag.svg?raw';
+import camera from 'lucide-static/icons/camera.svg?raw';
+import upload from 'lucide-static/icons/upload.svg?raw';
 import close from 'lucide-static/icons/x.svg?raw';
 
 const icons = {
@@ -47,6 +50,9 @@ const icons = {
   refresh,
   shield,
   check,
+  flag,
+  camera,
+  upload,
   close,
 };
 export type IconName = keyof typeof icons;

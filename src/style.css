@@ -985,3 +985,38 @@ body:not(.toolbar) .brand-icon {
   font-size: 14px;
   padding: 8px 12px;
 }
+
+.preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: -6px 0 12px;
+  font-size: 13px;
+}
+.preview-tools label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chapters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.chapters button {
+  font-size: 12px;
+}
+#search {
+  width: 100%;
+  margin: 0 0 12px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}

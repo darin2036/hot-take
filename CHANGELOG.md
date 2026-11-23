@@ -16,6 +16,14 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 - Floating speaker-notes window that never appears in a recording, and an option to leave Notification Center out of captures.
 - Microphone menu and Mic Mode in Settings ▸ Recording, with buttons to open the Mic and Camera settings.
 
+**Browser extension and web app**
+- Chapter markers while recording: press **M**, or use the flag button in the recorder, the toolbar popup or the floating controls. Markers use recording time (pauses don't count).
+- Chapters in the preview: click one to jump to it, **Copy timestamps** as `0:12 Marker 1` lines, or **Save chapters (.vtt)**.
+- Screenshots while recording: press **S** or use the camera button to save the current frame as a PNG.
+- Playback speed (0.5×–2×) in the preview.
+- Search your recordings by title in the library.
+- Import MP4, MOV, M4V or WebM videos from the library's upload button or by dropping them on the page. They stay in this browser like any take.
+
 **For agents and bug reports**
 - **For an agent** turns a take into a request for Claude Code, Codex or Cursor: your narration beside a picture of each click, a transcript and, with on-device intelligence, a goal and steps. Saved as `PROMPT.md` and copied ready to paste.
 - **Local agent control** (off until you turn on Settings ▸ Recording ▸ Let local agents control recording): an agent such as Claude Code or Codex can run the new `hottake` command (or `hottake mcp`) to record a screen, name moments with markers, describe an edit (cuts for the slow parts, zooms, captions, marks, a voice-over script) that lands in the Studio draft, and save it as a new copy. Comes with a *demo-recording* skill.

@@ -1,9 +1,15 @@
-export function filename(title: string, mime: string): string {
+export function safeTitle(title: string): string {
   return (
-    (title
+    title
       .replace(/[\\/:*?"<>|\x00-\x1f]/g, '-')
       .trim()
-      .slice(0, 120) || 'Recording') + (mime.includes('mp4') ? '.mp4' : '.webm')
+      .slice(0, 120) || 'Recording'
+  );
+}
+export function filename(title: string, mime: string): string {
+  return (
+    safeTitle(title) +
+    (mime.includes('mp4') ? '.mp4' : mime.includes('quicktime') ? '.mov' : '.webm')
   );
 }
 export function duration(ms: number): string {
@@ -34,4 +40,17 @@ export class ActiveClock {
   get elapsed() {
     return this.accumulated + (this.started === null ? 0 : this.now() - this.started);
   }
+}
+/** The container to record for an imported file, or '' when it is not a supported video. */
+export function importMime(name: string, type: string): string {
+  const t = type.toLowerCase();
+  if (t === 'video/mp4' || t === 'video/webm' || t === 'video/quicktime') return t;
+  const ext = name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return ext === 'mp4' || ext === 'm4v'
+    ? 'video/mp4'
+    : ext === 'mov'
+      ? 'video/quicktime'
+      : ext === 'webm'
+        ? 'video/webm'
+        : '';
 }

@@ -10,7 +10,7 @@ document.body.classList.add('toolbar');
 document.querySelector('#popup')!.innerHTML =
   `<header><a class="brand" href="#" id="brand"><img class="brand-icon" src="./favicon.svg" alt="">Hot Take</a><details class="settings-menu"><summary aria-label="Recording settings" title="Settings">${iconSvg('menu')}</summary><div class="settings-panel" id="settings-panel"></div></details></header>
 <main><section id="setup" aria-label="Recording setup"><button id="new" class="primary" aria-label="New recording">${iconSvg('circle')} Start recording</button></section>
-<section id="live" hidden aria-label="Recording controls"><div class="section-heading"><span id="live-state" class="pill">Recording</span><button id="show-recorder" class="icon-button" aria-label="Open recorder" title="Open recorder">${iconSvg('external')}</button></div><h2 id="live-title">Your take</h2><div id="elapsed" aria-label="Recording duration">00:00</div><div class="actions"><button id="pause">${iconSvg('pause')} Pause</button><button id="restart" class="icon-button" aria-label="Restart recording" title="Restart and discard current take">${iconSvg('refresh')}</button><button id="stop" class="danger" aria-label="Stop & save">${iconSvg('square')} Stop</button></div></section>
+<section id="live" hidden aria-label="Recording controls"><div class="section-heading"><span id="live-state" class="pill">Recording</span><button id="show-recorder" class="icon-button" aria-label="Open recorder" title="Open recorder">${iconSvg('external')}</button></div><h2 id="live-title">Your take</h2><div id="elapsed" aria-label="Recording duration">00:00</div><div class="actions"><button id="pause">${iconSvg('pause')} Pause</button><button id="marker" class="icon-button" aria-label="Add chapter marker" title="Add chapter marker">${iconSvg('flag')}</button><button id="restart" class="icon-button" aria-label="Restart recording" title="Restart and discard current take">${iconSvg('refresh')}</button><button id="stop" class="danger" aria-label="Stop & save">${iconSvg('square')} Stop</button></div></section>
 <p id="notice" role="status" aria-live="polite"></p>
 <button id="library" class="library-button">${iconSvg('library')} Library</button></main>`;
 document.querySelector('#settings-panel')!.innerHTML =
@@ -46,6 +46,7 @@ function render(snapshot: Snapshot | null) {
   );
   const enabled = ['recording', 'paused'].includes(snapshot.state) && !commandPending;
   el<HTMLButtonElement>('restart').disabled = !enabled;
+  el<HTMLButtonElement>('marker').disabled = !enabled;
   el<HTMLButtonElement>('pause').disabled = !enabled;
   el<HTMLButtonElement>('stop').disabled =
     (!enabled && snapshot.state !== 'countdown') || commandPending;
@@ -76,7 +77,7 @@ async function poll() {
     polling = false;
   }
 }
-async function command(action: 'pause' | 'resume' | 'stop' | 'restart') {
+async function command(action: 'pause' | 'resume' | 'stop' | 'restart' | 'marker') {
   if (!current || commandPending) return;
   commandPending = true;
   revision++;
@@ -86,7 +87,13 @@ async function command(action: 'pause' | 'resume' | 'stop' | 'restart') {
     const response = await requestControl(action, owner);
     if (response) {
       render(response);
-      notice(action === 'stop' ? 'Saving your take in the local library.' : '');
+      notice(
+        action === 'stop'
+          ? 'Saving your take in the local library.'
+          : action === 'marker'
+            ? `Marker added (${response.markers ?? 0} so far).`
+            : '',
+      );
     } else {
       notice('Recorder did not respond. Open its window to check; no recording was deleted.');
     }
@@ -109,6 +116,9 @@ el('pause').onclick = () => {
 };
 el('stop').onclick = () => {
   void command('stop');
+};
+el('marker').onclick = () => {
+  void command('marker');
 };
 el('restart').onclick = () => {
   void command('restart');

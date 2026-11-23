@@ -1,7 +1,7 @@
 import {iconSvg, iconLabel} from './icons';
 import {duration} from './core';
 import type {Snapshot} from './control';
-type Action = 'pause' | 'restart' | 'stop';
+type Action = 'pause' | 'restart' | 'stop' | 'marker';
 type PiPWindow = Window & {
   documentPictureInPicture?: {
     requestWindow(options: {width: number; height: number}): Promise<Window>;
@@ -38,7 +38,7 @@ export class FloatingControls {
         for (const sheet of document.querySelectorAll('style,link[rel="stylesheet"]'))
           pip.document.head.append(sheet.cloneNode(true));
         pip.document.body.className = 'floating-controls';
-        pip.document.body.innerHTML = `<div class="floating-state" role="status"></div><div class="floating-time">00:00</div><div class="actions"><button data-action="pause">${iconSvg('pause')} Pause</button><button data-action="restart" title="Restart and discard current take" aria-label="Restart recording">${iconSvg('refresh')}</button><button class="danger" data-action="stop">${iconSvg('square')} Stop</button></div>`;
+        pip.document.body.innerHTML = `<div class="floating-state" role="status"></div><div class="floating-time">00:00</div><div class="actions"><button data-action="pause">${iconSvg('pause')} Pause</button><button data-action="marker" title="Add a chapter marker" aria-label="Add marker">${iconSvg('flag')}</button><button data-action="restart" title="Restart and discard current take" aria-label="Restart recording">${iconSvg('refresh')}</button><button class="danger" data-action="stop">${iconSvg('square')} Stop</button></div>`;
         pip.document
           .querySelectorAll<HTMLButtonElement>('[data-action]')
           .forEach(

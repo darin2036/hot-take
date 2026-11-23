@@ -16,6 +16,13 @@ The browser version of Hot Take: a Manifest V3 browser extension and a static we
 - Recovery of committed bytes after an interruption; interrupted containers may not play.
 - A per-origin Web Lock prevents multiple recorder owners in one browser profile.
 
+- Chapter markers: press **M** (or use the flag button in the recorder, toolbar popup or floating controls) while recording. They are saved with the take. In the preview, click a chapter to jump to it, copy `0:12 Title` timestamps, or save a `.vtt` chapters file. Markers use active recording time, so pauses are not counted.
+- Screenshots: press **S** (or the camera button) while recording to save the current frame, including the webcam bubble if it is on, as a PNG in your downloads.
+- Preview playback speed from 0.5× to 2×.
+- Library search by title, and import of MP4, MOV, M4V or WebM files (upload button, or drop files on the library). Imported files are stored in the browser like a recording; the editor can trim them, and MOV playback depends on the browser's codecs.
+
+These shortcuts work while the recorder window is focused. There are no system-wide shortcuts: that would need a background worker, which this extension deliberately does not have.
+
 Webcam composition is experimental: keep the recorder visible. The browser can throttle background canvas rendering. The native picker remains authoritative; source audio and resolution depend on the browser, source, OS, and permissions. Video duration metadata and seeking across external players still need validation.
 
 ## Run locally

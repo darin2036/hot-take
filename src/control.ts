@@ -1,6 +1,6 @@
 /** Small same-origin control messages only. Media never crosses this channel. */
 export const CHANNEL = 'relaytake-controls-v1';
-export type Command = 'status' | 'pause' | 'resume' | 'stop' | 'restart';
+export type Command = 'status' | 'pause' | 'resume' | 'stop' | 'restart' | 'marker';
 export interface ControlRequest {
   version: 1;
   requestId: string;
@@ -12,6 +12,7 @@ export interface Snapshot {
   state: 'starting' | 'countdown' | 'recording' | 'paused' | 'saving';
   elapsed: number;
   countdown?: number;
+  markers?: number;
   title: string;
 }
 export function isRequest(value: unknown): value is ControlRequest {
@@ -20,7 +21,7 @@ export function isRequest(value: unknown): value is ControlRequest {
   return (
     v.version === 1 &&
     typeof v.requestId === 'string' &&
-    ['status', 'pause', 'resume', 'stop', 'restart'].includes(v.command || '') &&
+    ['status', 'pause', 'resume', 'stop', 'restart', 'marker'].includes(v.command || '') &&
     (v.command === 'status' || typeof v.owner === 'string')
   );
 }

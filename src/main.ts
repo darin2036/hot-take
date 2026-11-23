@@ -5,7 +5,8 @@ import {bindSettingsMenu} from './settings-menu';
 import {bindInputs} from './preferences';
 import {iconSvg, iconLabel, type IconName} from './icons';
 import './style.css';
-import {ActiveClock, bytes, duration, filename} from './core';
+import {ActiveClock, bytes, duration, filename, importMime, safeTitle} from './core';
+import {addMarker, chaptersVtt, cleanMarkers, SPEEDS, speedLabel, timestampList, type Marker} from './markers';
 import {acquire, supportedMime, type Capture} from './capture';
 import * as storage from './storage';
 import {CHANNEL, isRequest, type Snapshot} from './control';
@@ -20,9 +21,9 @@ root.innerHTML = `<header><a class="brand" href="./"><img class="brand-icon" src
 <div class="workspace"><section class="studio" aria-labelledby="studio-title"><div class="section-heading"><h2 id="studio-title">Record</h2><span id="state" class="pill">Ready</span></div>
 <div class="stage"><video id="monitor" muted autoplay playsinline></video><div id="placeholder"><div class="screen-icon">${iconSvg('monitor')}</div></div><span id="countdown" role="status" aria-live="assertive" hidden></span><span id="timer" class="timer">00:00</span></div>
 <div class="setup"><label class="title-label"><span class="sr-only">Recording title</span><input id="title" maxlength="120" placeholder="Untitled recording"></label><fieldset id="settings"><legend class="sr-only">Recording options</legend><div class="options"><label><input id="mic" type="checkbox"><span>Microphone</span></label><label><input id="camera" type="checkbox"><span>Camera</span></label><label><input id="audio" type="checkbox"><span>Source audio</span></label></div><div class="select-row"><label>Quality<select id="quality"><option value="high">1080p</option><option value="low">720p</option></select></label></div></fieldset>
-<div class="actions"><button id="start" class="primary" aria-label="Start recording">${iconSvg('circle')} Record</button><button id="pause" hidden>${iconSvg('pause')} Pause</button><button id="restart" title="Restart and discard current take" hidden>${iconSvg('refresh')} Restart</button><button id="float" class="icon-button" aria-label="Float recording controls" title="Float controls" hidden>${iconSvg('external')}</button><button id="stop" class="danger" aria-label="Stop & save" hidden>${iconSvg('square')} Stop</button></div><p id="status" role="status" aria-live="polite"></p></div></section></div>
+<div class="actions"><button id="start" class="primary" aria-label="Start recording">${iconSvg('circle')} Record</button><button id="pause" hidden>${iconSvg('pause')} Pause</button><button id="marker" class="icon-button" aria-label="Add chapter marker (M)" title="Add chapter marker (M)" hidden>${iconSvg('flag')}</button><button id="shot" class="icon-button" aria-label="Save screenshot (S)" title="Save screenshot (S)" hidden>${iconSvg('camera')}</button><button id="restart" title="Restart and discard current take" hidden>${iconSvg('refresh')} Restart</button><button id="float" class="icon-button" aria-label="Float recording controls" title="Float controls" hidden>${iconSvg('external')}</button><button id="stop" class="danger" aria-label="Stop & save" hidden>${iconSvg('square')} Stop</button></div><p id="status" role="status" aria-live="polite"></p></div></section></div>
 <section class="library" id="library" aria-label="Recordings"><h1 class="sr-only">Recordings</h1><span id="count" hidden></span><button id="refresh" class="icon-button" aria-label="Refresh library" title="Refresh">${iconSvg('refresh')}</button><div id="recordings"></div></section></main>
-<dialog id="preview"><div class="section-heading"><h2 id="preview-title">Preview</h2><button id="close-preview" aria-label="Close preview">${iconSvg('close')}</button></div><video id="playback" controls playsinline></video><p id="recovery-warning" class="fine" hidden>Recovered recording: playback may be incomplete.</p></dialog>`;
+<dialog id="preview"><div class="section-heading"><h2 id="preview-title">Preview</h2><button id="close-preview" aria-label="Close preview">${iconSvg('close')}</button></div><video id="playback" controls playsinline></video><div class="preview-tools"><label>Speed <select id="speed">${SPEEDS.map((v) => `<option value="${v}"${v === 1 ? ' selected' : ''}>${speedLabel(v)}</option>`).join('')}</select></label><span id="chapter-tools" hidden><button id="copy-chapters">Copy timestamps</button><button id="save-chapters">Save chapters (.vtt)</button></span></div><div id="chapters" class="chapters" hidden></div><p id="recovery-warning" class="fine" hidden>Recovered recording: playback may be incomplete.</p></dialog>`;
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const start = el<HTMLButtonElement>('start'),
   pause = el<HTMLButtonElement>('pause'),
@@ -40,8 +41,59 @@ let capture: Capture | undefined,
   stopping = false,
   busy = false,
   release: (() => void) | undefined,
-  warningShown = false;
+  warningShown = false,
+  markers: Marker[] = [];
 let objectURL: string | undefined;
+let query = '';
+function videoDuration(file: Blob): Promise<number> {
+  return new Promise((resolve) => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    const done = (ms: number) => {
+      clearTimeout(timer);
+      v.removeAttribute('src');
+      v.load();
+      URL.revokeObjectURL(url);
+      resolve(ms);
+    };
+    const timer = setTimeout(() => done(0), 8000);
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) ? Math.round(v.duration * 1000) : 0);
+    v.onerror = () => done(-1);
+    v.src = url;
+  });
+}
+async function importFiles(files: File[]) {
+  let added = 0;
+  for (const file of files) {
+    const mime = importMime(file.name, file.type);
+    if (!mime) {
+      status(`${file.name} is not an MP4, MOV or WebM video.`);
+      continue;
+    }
+    const estimate = await navigator.storage.estimate();
+    if (estimate.quota && estimate.quota - (estimate.usage || 0) < file.size + 100 * 1024 * 1024) {
+      status(`Not enough browser storage for ${file.name}.`);
+      continue;
+    }
+    const length = await videoDuration(file);
+    if (length < 0) {
+      status(`${file.name} could not be read as a video.`);
+      continue;
+    }
+    try {
+      await storage.importBlob(file, file.name.replace(/\.[^.]+$/, '').slice(0, 120), mime, length);
+      added++;
+    } catch {
+      status(`Could not import ${file.name}.`);
+    }
+  }
+  if (added) {
+    status(added === 1 ? 'Imported 1 video.' : `Imported ${added} videos.`);
+    channel.postMessage({type: 'library-changed'});
+    await refresh();
+  }
+}
 let countdown = 0,
   countdownToken = 0,
   restarting = false;
@@ -51,10 +103,13 @@ const floating = new FloatingControls(
   (action) => {
     if (action === 'restart') restartTake();
     else if (action === 'stop') end();
+    else if (action === 'marker') markNow();
     else pause.click();
   },
 );
 const restart = el<HTMLButtonElement>('restart'),
+  marker = el<HTMLButtonElement>('marker'),
+  shot = el<HTMLButtonElement>('shot'),
   float = el<HTMLButtonElement>('float');
 float.onclick = () => {
   void floating
@@ -79,6 +134,7 @@ function snapshot(): Snapshot {
             ? 'recording'
             : 'starting',
     elapsed: recorder ? clock.elapsed : 0,
+    markers: markers.length,
     title: el<HTMLInputElement>('title').value.trim() || 'Untitled take',
   };
 }
@@ -101,6 +157,7 @@ channel.onmessage = (event) => {
   // Acknowledge before asynchronous finalization can release ownership.
   if (message.command === 'stop' && recorder && !stopping) end();
   if (message.command === 'restart') restartTake();
+  if (message.command === 'marker') markNow();
   channel.postMessage({version: 1, requestId: message.requestId, snapshot: snapshot()});
 };
 bindInputs(params, () => !busy);
@@ -144,7 +201,41 @@ if (view === 'library') {
   create.onclick = () => {
     void openSurface('recorder');
   };
-  el('header-actions').append(el('refresh'), create);
+  const importButton = document.createElement('button');
+  importButton.id = 'import';
+  importButton.innerHTML = iconSvg('upload');
+  importButton.setAttribute('aria-label', 'Import video');
+  importButton.title = 'Import a video (or drop one here)';
+  importButton.className = 'icon-button';
+  const picker = document.createElement('input');
+  picker.type = 'file';
+  picker.accept = 'video/mp4,video/webm,video/quicktime,.mp4,.m4v,.mov,.webm';
+  picker.multiple = true;
+  picker.hidden = true;
+  picker.onchange = () => {
+    void importFiles([...(picker.files || [])]);
+    picker.value = '';
+  };
+  importButton.onclick = () => picker.click();
+  el('header-actions').append(el('refresh'), importButton, picker, create);
+  const search = document.createElement('input');
+  search.id = 'search';
+  search.type = 'search';
+  search.placeholder = 'Search recordings';
+  search.setAttribute('aria-label', 'Search recordings');
+  search.oninput = () => {
+    query = search.value.trim().toLowerCase();
+    void refresh();
+  };
+  el('library').prepend(search);
+  document.addEventListener('dragover', (event) => {
+    if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+  });
+  document.addEventListener('drop', (event) => {
+    if (!event.dataTransfer?.files.length) return;
+    event.preventDefault();
+    void importFiles([...event.dataTransfer.files]);
+  });
   const feedback = document.createElement('p');
   feedback.id = 'library-status';
   feedback.setAttribute('role', 'status');
@@ -162,8 +253,39 @@ async function previewRecording(row: storage.Recording) {
   el<HTMLVideoElement>('playback').src = objectURL;
   el('preview-title').textContent = row.title;
   el('recovery-warning').hidden = row.status !== 'interrupted';
+  showChapters(row);
   el<HTMLDialogElement>('preview').showModal();
 }
+function showChapters(row: storage.Recording) {
+  const list = cleanMarkers(row.markers);
+  const box = el('chapters');
+  box.replaceChildren();
+  box.hidden = el('chapter-tools').hidden = !list.length;
+  for (const m of list) {
+    const b = document.createElement('button');
+    b.textContent = `${timestampList([m])}`;
+    b.onclick = () => {
+      const v = el<HTMLVideoElement>('playback');
+      v.currentTime = m.time;
+      void v.play().catch(() => {});
+    };
+    box.append(b);
+  }
+  el('copy-chapters').onclick = () => {
+    void navigator.clipboard
+      .writeText(timestampList(list))
+      .then(() => status('Timestamps copied.'))
+      .catch(() => status('Could not copy. Use Save chapters instead.'));
+  };
+  el('save-chapters').onclick = () =>
+    save(
+      new Blob([chaptersVtt(list, row.duration / 1000)], {type: 'text/vtt'}),
+      `${safeTitle(row.title)} chapters.vtt`,
+    );
+}
+el<HTMLSelectElement>('speed').onchange = (event) => {
+  el<HTMLVideoElement>('playback').playbackRate = Number((event.target as HTMLSelectElement).value);
+};
 
 function controls(active: boolean) {
   start.hidden = active;
@@ -171,6 +293,10 @@ function controls(active: boolean) {
   pause.hidden = !active;
   stop.hidden = !active;
   restart.hidden = !active;
+  marker.hidden = !active;
+  shot.hidden = !active;
+  marker.disabled = countdown > 0 || stopping;
+  shot.disabled = countdown > 0 || stopping;
   float.hidden = !active;
   restart.disabled = countdown > 0 || stopping;
   pause.disabled = countdown > 0 || stopping;
@@ -210,6 +336,49 @@ function restartTake() {
   el('state').textContent = 'Restarting…';
   recorder.stop();
 }
+function markNow() {
+  if (!recorder || stopping || countdown || !['recording', 'paused'].includes(recorder.state))
+    return;
+  const next = addMarker(markers, clock.elapsed);
+  if (next === markers) return;
+  markers = next;
+  status(`Marker added at ${duration(clock.elapsed)} (${markers.length} so far).`);
+}
+function screenshot() {
+  if (!recorder || stopping || countdown || !monitor.videoWidth) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = monitor.videoWidth;
+  canvas.height = monitor.videoHeight;
+  canvas.getContext('2d')!.drawImage(monitor, 0, 0);
+  const name = `${safeTitle(el<HTMLInputElement>('title').value.trim() || 'Screenshot')} ${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
+  canvas.toBlob((blob) => {
+    if (!blob) return status('Could not capture a screenshot.');
+    save(blob, name);
+    status(`Saved ${name} to your downloads.`);
+  }, 'image/png');
+}
+function save(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+marker.onclick = markNow;
+shot.onclick = screenshot;
+document.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement | null;
+  if (
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    (target instanceof Element && target.closest('input,textarea,select,dialog[open]'))
+  )
+    return;
+  if (event.key.toLowerCase() === 'm') markNow();
+  else if (event.key.toLowerCase() === 's') screenshot();
+});
 async function beginTake() {
   const mime = supportedMime();
   if (!mime || !capture) throw new Error('Recording source is unavailable.');
@@ -220,6 +389,7 @@ async function beginTake() {
     audioBitsPerSecond: 128000,
   });
   id = crypto.randomUUID();
+  markers = [];
   await storage.save({
     id,
     title: el<HTMLInputElement>('title').value.trim() || 'Untitled take',
@@ -304,7 +474,7 @@ async function finish() {
   capture = undefined;
   try {
     if (recorder?.state === 'inactive' && clock.elapsed === 0) await storage.remove(id);
-    else await storage.finalize(id, clock.elapsed, failed);
+    else await storage.finalize(id, clock.elapsed, failed, markers);
     status(
       failed
         ? 'Recording interrupted. Committed bytes are in your library; playback may be incomplete.'
@@ -465,15 +635,16 @@ function button(text: string, action: () => void | Promise<void>) {
 const thumbnails = new ThumbnailQueue();
 window.addEventListener('pagehide', () => thumbnails.reset());
 async function refresh() {
-  const rows = await storage.list();
+  const all = await storage.list();
+  const rows = query ? all.filter((r) => r.title.toLowerCase().includes(query)) : all;
   thumbnails.reset();
-  el('count').textContent = String(rows.length);
+  el('count').textContent = String(all.length);
   const container = el('recordings');
   container.replaceChildren();
   if (!rows.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = 'No recordings yet';
+    empty.textContent = query ? 'No recordings match your search' : 'No recordings yet';
     container.append(empty);
   }
   for (const row of rows) {
@@ -570,6 +741,8 @@ el('close-preview').onclick = () => el<HTMLDialogElement>('preview').close();
 el<HTMLDialogElement>('preview').addEventListener('close', () => {
   const v = el<HTMLVideoElement>('playback');
   v.pause();
+  el<HTMLSelectElement>('speed').value = '1';
+  v.playbackRate = 1;
   v.removeAttribute('src');
   v.load();
   if (objectURL) URL.revokeObjectURL(objectURL);
