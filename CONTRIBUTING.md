@@ -20,7 +20,7 @@ npm ci
 npm run typecheck && npm test && npm run build
 ```
 
-**Mac app** (macOS 26+, Swift 6.2; the full developer tools or the command line tools):
+**Mac app** (macOS 26+, Swift 6.2; the full Xcode with its Metal Toolchain, `xcodebuild -downloadComponent MetalToolchain`):
 
 ```sh
 cd mac

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds "Hot Take.app" (a menu-bar app) from the Swift package. Needs only the command line tools.
+# Builds "Hot Take.app" (a menu-bar app) from the Swift package. Needs the full Xcode with its Metal Toolchain component
+# (`xcodebuild -downloadComponent MetalToolchain`), because the on-device voice runs on the GPU through MLX.
 # Signing: the system ties Screen Recording / Microphone grants to the app's code identity. An ad-hoc
 # signature is just the hash of this exact build, so every rebuild loses the grant. Use a real
 # certificate (a free "Apple Development" certificate works) and the grant survives rebuilds.
@@ -14,6 +15,15 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp ../CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
 cp Resources/Help.md "$APP/Contents/Resources/Help.md"
 cp "$(swift build -c release --show-bin-path)/Relaytake" "$APP/Contents/MacOS/Hot Take"
+# The on-device voice (Kokoro, run with Apple's MLX) comes as dynamic libraries, and each package brings a resource bundle (MLX's GPU
+# shader library, the pronunciation dictionaries). The libraries go in Frameworks, which the app's code is pointed at, and the bundles in
+# Resources, where SwiftPM's generated code looks for them. Building needs the full Xcode with the Metal Toolchain component
+# (`xcodebuild -downloadComponent MetalToolchain`), which compiles MLX's shaders.
+BIN="$(swift build -c release --show-bin-path)"
+mkdir -p "$APP/Contents/Frameworks"
+cp "$BIN"/*.dylib "$APP/Contents/Frameworks/"
+for bundle in "$BIN"/*.bundle; do cp -R "$bundle" "$APP/Contents/Resources/"; done
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Hot Take"
 # The command an agent runs to drive the recorder (see Help ▸ Let an agent record a demo).
 mkdir -p "$APP/Contents/Helpers"
 cp "$(swift build -c release --show-bin-path)/hottake" "$APP/Contents/Helpers/hottake"
@@ -57,12 +67,14 @@ PLIST
 plutil -replace CFBundleVersion -string "$(git rev-list --count HEAD 2>/dev/null || echo 1)" "$APP/Contents/Info.plist"
 IDENTITY="${RELAYTAKE_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
 if [ -n "$IDENTITY" ]; then
+  for lib in "$APP"/Contents/Frameworks/*.dylib; do codesign --force --sign "$IDENTITY" "$lib"; done
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac.hottake "$APP/Contents/Helpers/hottake"
   codesign --force --sign "$IDENTITY" --identifier org.relaytake.mac "$APP"
   echo "Signed with: $IDENTITY"
 else
   # No certificate: build ad hoc so the app still runs. An ad-hoc signature is different on every rebuild, so the
   # system forgets the Screen Recording grant each time; a free "Apple Development" certificate avoids that.
+  for lib in "$APP"/Contents/Frameworks/*.dylib; do codesign --force --sign - "$lib"; done
   codesign --force --sign - "$APP/Contents/Helpers/hottake"
   codesign --force --sign - "$APP"
   echo "Signed ad-hoc: the system will forget Screen Recording permission after every rebuild."

@@ -57,7 +57,14 @@ All notable changes to Hot Take, newest first. See [docs/compatibility.md](docs/
 - Menu bar reorganized: File, View, and new Record, Take and Studio menus.
 - Resizable Info panel and Transcript divider (double-click resets; widths are remembered).
 
+**Voice**
+- **AI voiceover with your ElevenLabs account:** Settings ▸ Voice takes an API key from your ElevenLabs account (kept in your Mac's Keychain), and the Studio's Voiceover button can then speak the transcript in a voice you choose. Each line goes where it was said, and speeds up a little if it would run into the next one.
+- **Agents can voice a demo:** an edit's `voiceover` option speaks the narration lines at each marker in your ElevenLabs voice. It is off until you turn on Settings ▸ Voice ▸ Let local agents make a demo's voiceover, and speaks at most 5,000 characters per edit.
+
 ### Changed
+
+- The app no longer refuses every web request: it downloads the on-device voice once, when you click Download Voice, and if you choose ElevenLabs and sign in, sends the lines of a voiceover you ask for to ElevenLabs. Otherwise nothing changes.
+- The Mac app now needs the full Xcode with its Metal Toolchain to build (the on-device voice runs on the GPU through MLX).
 
 - Share in the Studio sends the edited version, not the original.
 - Save Copy moved to File ▸ Save Copy (⇧⌘S); it and Export use the Studio's Save Options.

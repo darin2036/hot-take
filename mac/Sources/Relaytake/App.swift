@@ -1099,6 +1099,15 @@ struct RelaytakeApp: App {
                 }
             }
         }
+        // `Hot Take --voice-check [--download] [OUT.wav]` loads the on-device voice from the app bundle's own libraries, speaks one sentence and prints
+        // how long it came out, so a build can be checked for the model, its libraries and the GPU shader library without opening a window.
+        // It downloads the voice only if `--download` is given; without the voice it says so and exits 2.
+        if let flag = args.firstIndex(of: "--voice-check") {
+            let out = args.dropFirst(flag + 1).first { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
+            Task { @MainActor in
+                exit(await VoiceCheck.run(writeTo: out, download: args.contains("--download")))
+            }
+        }
         // `Hot Take --playback-check` exercises the pop-out and full-screen windows and prints the results.
         if args.contains("--playback-check") {
             Task { @MainActor in

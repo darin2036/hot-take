@@ -168,7 +168,7 @@ Let an AI agent on this Mac, such as Claude Code or Codex, record a demo of an a
 ### Turn it on
 
 - In that window, or in Settings ▸ **Recording**, turn on **Let local agents control recording**. It is off until you do.
-- Only programs run by your own account can connect, nothing leaves this Mac, and the recording bar stays on screen whenever an agent is recording. An agent's recording stops by itself after 30 minutes, and turning the setting off stops one that is running.
+- Only programs run by your own account can connect, nothing leaves this Mac through that connection (a voiceover you allow is the one exception, below), and the recording bar stays on screen whenever an agent is recording. An agent's recording stops by itself after 30 minutes, and turning the setting off stops one that is running.
 - Screen Recording permission is still yours to give (see *Permissions and privacy*).
 - A second switch, **Also let agents use the mouse and keyboard**, is off until you turn it on. It lets an agent move the pointer, click, drag, press keys and type through `hottake`, so it can drive the app it is demoing. It acts as you, so turn it on only for an agent you trust. Hot Take checks the switch before each action, and your terminal or agent app may also need Accessibility permission in System Settings.
 - While an agent's recording is running, **⌘N** does nothing, so a stray keystroke cannot end the take. The control bar's Stop, **Record ▸ Stop Recording** and the recording shortcut still stop it.
@@ -194,7 +194,7 @@ The agent drives the app being recorded itself; Hot Take only records and edits.
 
 ### The voice-over script
 
-When an edit names what to say at each marker, Hot Take writes a file beside the take called `Take name.narration.md`. It lists each part of the edited video with its time and the line to read, and says when a line is too long for its part. Read it yourself, or give it to a voice tool, then add the recording to the Studio as a voiceover.
+When an edit names what to say at each marker, Hot Take writes a file beside the take called `Take name.narration.md`. It lists each part of the edited video with its time and the line to read, and says when a line is too long for its part. Read it yourself, or give it to a voice tool, then add the recording to the Studio as a voiceover. If you have set up a voice in Settings ▸ Voice, an agent can ask Hot Take to speak the lines itself (`"voiceover": {}` in the edit, optionally with `"voice": "Emma"` and `"engine": "local"` or `"elevenlabs"`): they go on the Voiceover track at each marker, and the recording's own sound is silenced unless the edit says to keep it. The voice on this Mac costs nothing, sends nothing and is used whenever agent control is on (up to 20,000 characters in one edit). A voice from ElevenLabs is used only if you also turned on **Let local agents make a demo's voiceover** in Settings ▸ Voice, and then at most 5,000 characters in one edit, charged to your ElevenLabs plan. An agent never sees your key. If something stops it, the edit is still saved and says why.
 
 ### Captions for a demo with no spoken audio
 
@@ -324,7 +324,23 @@ Cuts follow each line's timing, so a cut can take a moment of the pause before o
 
 - **Add Text** puts words at the playhead. Drag them on the preview, resize the bar to change how long they show, and choose font, size, color and an optional box.
 - **Add Music** (or drop an audio file on the timeline) adds a background track that fits the video, loops if short, fades in and out and has its own volume.
-- **Voiceover** counts down, plays the video muted, and records your microphone. You can have it replace the original audio.
+- **Voiceover** counts down, plays the video muted, and records your microphone. You can have it replace the original audio. The same button can instead speak the transcript in an AI voice (below).
+
+### Speak it with an AI voice
+
+Hot Take can read the transcript aloud in an AI voice and lay each line on the Voiceover track where it was said. The default voice runs on your Mac and sends nothing anywhere. You can instead use a voice from your own ElevenLabs account.
+
+1. Open Settings and choose the **Voice** tab.
+2. **On this Mac** (the default): click **Download Voice**. It is a one-time download of about 330 MB (Kokoro, an open speech model, and ten English voices) from Hugging Face; every file is checked against a fixed fingerprint before it is used, and only this download uses the network. Then choose a voice. Remove the download any time with **Remove…**.
+3. **ElevenLabs** (optional): choose ElevenLabs, click **Get a Key…**, sign in to ElevenLabs in your browser, make an API key (you can limit it to Text to Speech, Voices and User read) and paste it in. ElevenLabs does not offer a sign-in for other apps, so a key is how Hot Take connects. It is kept in your Mac's Keychain. Choose a voice and a model; Multilingual v2 sounds the most natural and Flash v2.5 is quicker and uses half the characters.
+4. In the Studio, click **Voiceover**, then **Speak the Transcript**. It shows how many lines it will speak before you start, and says whether the words stay on your Mac. If the take has no transcript yet, make one with the Transcript button first. A demo an agent wrote with captions and no spoken audio is spoken from those captions.
+
+- The voice on this Mac is English only. The first line takes a few seconds longer while the model loads; after that it is quicker than real time on a Mac with Apple silicon.
+- A line that would run into the next is spoken again a little faster (up to 1.3× on this Mac, 1.2× on ElevenLabs). If it still does not fit, it is cut off at the end of its part and the Studio tells you which one, so you can shorten it.
+- **Replace the original audio** silences the recording's own sound under the voice, the same as when you record yourself.
+- The voice lines are ordinary voiceover clips: drag, split, change the volume or delete them. Running it again replaces the earlier AI voice and leaves your own recordings alone.
+- **ElevenLabs privacy and cost:** the words of the lines are sent to ElevenLabs, and your ElevenLabs plan is charged for them. Nothing else is sent, and nothing is sent until you press the button. **Sign Out** in Settings removes the key from the Keychain. The voice on this Mac sends nothing.
+- If it stops partway (no characters left on ElevenLabs, a key that was revoked), the lines already spoken are kept.
 
 ### Tighten
 
@@ -405,7 +421,7 @@ Settings ▸ **Permissions** shows each one and opens the right System Settings 
 
 ### Privacy
 
-Everything happens on your Mac. Hot Take has no account, no telemetry and no web service, and it refuses every web request it makes. Windows are listed only to draw the previews, and nothing is recorded until you press Start. Clicks are noted by time and position only.
+Everything happens on your Mac. Hot Take has no account of its own, no telemetry and no web service, and it refuses every web request it makes, with two exceptions you set up yourself: downloading the on-device voice once from Hugging Face (Settings ▸ Voice, after you click Download), and, only if you choose ElevenLabs and sign in there, sending the words of a voiceover you ask for to ElevenLabs to be spoken (nothing else, and nothing before you ask). Speaking with the voice on this Mac never uses the network. Windows are listed only to draw the previews, and nothing is recorded until you press Start. Clicks are noted by time and position only.
 
 ### Resetting permissions
 

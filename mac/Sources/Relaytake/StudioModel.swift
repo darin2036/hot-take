@@ -60,6 +60,9 @@ final class StudioModel: ObservableObject {
 
     @Published private(set) var voice = VoiceState.idle
     @Published private(set) var inputLevel = 0.0
+    /// Progress of an AI voice speaking the transcript: lines done and lines in all, or nil when it is not running.
+    @Published private(set) var speaking: (done: Int, total: Int)?
+    private var speakTask: Task<Void, Never>?
 
     /// Loudness over time per audio file, for drawing waveforms.
     @Published private(set) var levels: [URL: [Double]] = [:]
@@ -1020,6 +1023,62 @@ final class StudioModel: ObservableObject {
         Task { await rebuildPreview() }
     }
 
+    // MARK: AI voiceover
+
+    /// The lines an AI voice would speak: what was said (the take's transcript) or, for a demo with no spoken audio, the captions an
+    /// agent wrote, moved onto the edited video. A line the edit cut away is not here.
+    var spokenLines: [VoiceLine] {
+        let cues = !transcriptLines.isEmpty ? transcriptLines : (project.captions?.fromNarration == true ? project.captions?.cues ?? [] : [])
+        return VoiceoverPlan.lines(transcript: cues, cuts: project.cuts, outputDuration: project.outputDuration)
+    }
+
+    /// Speaks `spokenLines` with the voice chosen in Settings ▸ Voice (on this Mac, or ElevenLabs) and lays the audio on the Voiceover
+    /// track at the right places. Each line is spoken faster if it would run into the next. A cancelled or failed run adds nothing
+    /// half-made; a line that fails after others were spoken keeps those.
+    func speakTranscript(replaceOriginal: Bool) {
+        guard speaking == nil, voice == .idle, ready else { return }
+        let lines = spokenLines
+        guard !lines.isEmpty else {
+            message = "There is nothing to speak yet. Make the transcript first with the Transcript button."
+            return
+        }
+        player.pause()
+        speaking = (0, lines.count)
+        let files = take.files
+        speakTask = Task {
+            defer { speaking = nil; speakTask = nil }
+            let chosen: VoiceProvider.Ready
+            switch await VoiceProvider.ready() {
+            case .failure(let problem):
+                message = "Could not make the voiceover: \(problem.message)."
+                return
+            case .success(let ready): chosen = ready
+            }
+            do {
+                let result = try await VoiceGeneration.run(lines: lines, engine: chosen.engine, files: files) { [weak self] done, total in
+                    Task { @MainActor in if self?.speaking != nil { self?.speaking = (done, total) } }
+                }
+                let notes = VoiceoverPlan.warnings(for: result)
+                guard !result.spoken.isEmpty else {
+                    message = notes.first ?? "Nothing was spoken."
+                    return
+                }
+                edit { VoiceoverPlan.place(result.spoken, in: &$0, replacingOriginalAudio: replaceOriginal) }
+                for item in result.spoken { loadLevels(for: item.url) }
+                await rebuildPreview()
+                let sent = chosen.source.sendsText ? " (\(result.charactersSent) characters sent)" : ""
+                info = "Spoke \(result.spoken.count) line\(result.spoken.count == 1 ? "" : "s") with \(chosen.label)\(sent)."
+                if !notes.isEmpty { message = notes.joined(separator: "\n") }
+            } catch is CancellationError {
+                info = "Stopped. Nothing was added."
+            } catch {
+                message = "Could not make the voiceover: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func cancelSpeaking() { speakTask?.cancel() }
+
     // MARK: Saving
 
     /// A copy needs saving when something was edited, or when it is to be made smaller or silent.
@@ -1155,6 +1214,7 @@ final class StudioModel: ObservableObject {
         if !draftDiscarded { saveDraftNow() }
         player.pause()
         if voice != .idle { cancelVoiceover() }
+        speakTask?.cancel()
         rebuildTask?.cancel()
         saveTask?.cancel()
         draftTask?.cancel()

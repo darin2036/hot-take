@@ -34,5 +34,7 @@ jobs:
         working-directory: mac
     steps:
       - uses: actions/checkout@v4
+      # MLX (the on-device voice) compiles GPU shaders, which needs Xcode's Metal Toolchain component.
+      - run: xcodebuild -downloadComponent MetalToolchain
       - run: swift build -c release
       - run: ./scripts/test.sh

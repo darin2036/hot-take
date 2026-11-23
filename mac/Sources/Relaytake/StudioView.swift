@@ -231,6 +231,10 @@ private struct Transport: View {
     @AppStorage("autoZoomAmount") private var zoomAmount = 1.8
     @State private var fromPlayhead = false
     @State private var replaceOriginal = true
+    @ObservedObject private var account = ElevenLabsAccount.shared
+    @ObservedObject private var localVoice = LocalVoiceStore.shared
+    @AppStorage(Pref.voiceSource) private var voiceSource = VoiceProvider.Source.local.rawValue
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack(spacing: 10) {
@@ -264,6 +268,10 @@ private struct Transport: View {
                     .buttonStyle(TakeButtonStyle(color: .red))
             } else if case .countdown = model.voice {
                 Button("Cancel") { model.cancelVoiceover() }
+            } else if let progress = model.speaking {
+                ProgressView().controlSize(.small)
+                Text("Speaking line \(min(progress.done + 1, progress.total)) of \(progress.total)…").font(.callout).foregroundStyle(.secondary)
+                Button("Cancel") { model.cancelSpeaking() }
             } else {
                 // All four tools show their names when there is room, or all show icons only.
                 ViewThatFits(in: .horizontal) {
@@ -594,6 +602,46 @@ private struct Transport: View {
             .background(Color.gray.opacity(0.35), in: RoundedRectangle(cornerRadius: 5))
     }
 
+    /// Speaking the transcript in the voice chosen in Settings ▸ Voice. Says plainly whether the words stay on this Mac.
+    private var aiVoice: some View {
+        let status = VoiceProvider.status()
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Or speak it in an AI voice").font(.headline)
+            if let voice = status.voice {
+                let lines = model.spokenLines
+                if lines.isEmpty {
+                    Text("Make the transcript first (the Transcript button), then come back.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else if status.source.sendsText {
+                    Text("\(lines.count) line\(lines.count == 1 ? "" : "s"), about \(VoiceoverPlan.characters(lines)) characters, spoken by \(voice) on ElevenLabs. The text is sent to ElevenLabs and your plan is charged for it. Each line speeds up if it would run into the next.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("\(lines.count) line\(lines.count == 1 ? "" : "s"), spoken by \(voice) on this Mac. Nothing is sent anywhere. Each line speeds up if it would run into the next.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                HStack {
+                    Spacer()
+                    Button("Speak the Transcript") {
+                        showVoiceover = false
+                        model.speakTranscript(replaceOriginal: replaceOriginal)
+                    }
+                    .disabled(lines.isEmpty)
+                }
+            } else {
+                Text(status.setup ?? "Set up a voice in Settings ▸ Voice first.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Set Up a Voice…") {
+                        showVoiceover = false
+                        openSettings()
+                    }
+                    .help("Opens Settings. Choose the Voice tab.")
+                }
+            }
+        }
+    }
+
     private var voiceoverOptions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Record a voiceover").font(.headline)
@@ -605,7 +653,7 @@ private struct Transport: View {
                 Text("From the playhead (\(timeLabel(clock.time)))").tag(true)
             }
             .pickerStyle(.radioGroup)
-            Toggle("Replace the original audio with my voice", isOn: $replaceOriginal)
+            Toggle("Replace the original audio with the voiceover", isOn: $replaceOriginal)
             HStack {
                 Spacer()
                 Button("Cancel") { showVoiceover = false }
@@ -615,6 +663,8 @@ private struct Transport: View {
                 }
                 .buttonStyle(TakeButtonStyle(color: .red))
             }
+            Divider()
+            aiVoice
         }
         .padding(16)
         .frame(width: 340)

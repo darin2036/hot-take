@@ -195,11 +195,73 @@ extension RecorderModel {
         case .failure(let failure):
             return AgentResponse(ok: false, error: failure.message, take: files.baseName, warnings: failure.warnings.isEmpty ? nil : failure.warnings)
         case .success(let done):
+            var applied = done.outcome.applied
+            var warnings = done.outcome.warnings
+            if let wanted = list.voiceover {
+                let spoken = await agentVoiceover(wanted, done: done, files: files)
+                applied += spoken.applied
+                warnings += spoken.warnings
+            }
             LibraryModel.shared.refresh()
             return AgentResponse(
                 take: files.baseName, video: files.video.path, seconds: done.project.outputDuration,
-                markers: markers.isEmpty ? nil : markers, applied: done.outcome.applied,
-                warnings: done.outcome.warnings.isEmpty ? nil : done.outcome.warnings, narration: done.narration?.path)
+                markers: markers.isEmpty ? nil : markers, applied: applied,
+                warnings: warnings.isEmpty ? nil : warnings, narration: done.narration?.path)
+        }
+    }
+
+    /// Speaks an edit's narration lines with the voice the person chose in Settings ▸ Voice (or the engine and voice the edit names) and
+    /// adds them to the Studio draft the edit just wrote. The voice on this Mac costs nothing and sends nothing. ElevenLabs spends the
+    /// person's characters, so it needs its own switch and is held to `ElevenLabs.agentCharacterLimit` characters at once. An agent
+    /// never sees a key. Any problem leaves the edit saved without a voice.
+    private func agentVoiceover(
+        _ wanted: EditList.Voiceover, done: AgentEdit.Done, files: TakeFiles
+    ) async -> (applied: [String], warnings: [String]) {
+        let skipped = "The edit was saved without a voiceover."
+        var warnings: [String] = []
+        var source = VoiceProvider.source
+        if let named = wanted.engine?.trimmingCharacters(in: .whitespaces).lowercased(), !named.isEmpty {
+            switch named {
+            case "local", "kokoro", "on-device": source = .local
+            case "elevenlabs", "eleven labs": source = .elevenLabs
+            default: warnings.append("“\(named)” is not a voice engine, so the one chosen in Settings was used. Use local or elevenlabs.")
+            }
+        }
+        guard VoiceProvider.agentsMay(use: source) else {
+            return ([], warnings + ["Voiceover was not made: the person has not let agents use their ElevenLabs voice (Settings ▸ Voice). \(skipped)"])
+        }
+        let chosen: VoiceProvider.Ready
+        switch await VoiceProvider.ready(source: source, voice: wanted.voice) {
+        case .failure(let problem): return ([], warnings + ["Voiceover was not made: \(problem.message). \(skipped)"])
+        case .success(let ready): chosen = ready
+        }
+        if let note = chosen.note { warnings.append(note) }
+        let lines = VoiceoverPlan.lines(beats: done.outcome.beats)
+        guard !lines.isEmpty else {
+            return ([], warnings + ["Voiceover was not made: no narration line landed on the video. Write narration for the markers. \(skipped)"])
+        }
+        let characters = VoiceoverPlan.characters(lines)
+        let limit = chosen.source == .elevenLabs ? ElevenLabs.agentCharacterLimit : LocalSpeech.agentCharacterLimit
+        guard characters <= limit else {
+            let why = chosen.source == .elevenLabs ? ", because they are charged to the person's ElevenLabs plan" : ""
+            return ([], warnings + ["Voiceover was not made: the narration is \(characters) characters and an agent may speak at most \(limit) at once\(why). Shorten it. \(skipped)"])
+        }
+        do {
+            let result = try await VoiceGeneration.run(lines: lines, engine: chosen.engine, files: files) { _, _ in }
+            warnings += VoiceoverPlan.warnings(for: result)
+            guard !result.spoken.isEmpty else { return ([], warnings + [skipped]) }
+            var project = done.project
+            VoiceoverPlan.place(result.spoken, in: &project, replacingOriginalAudio: wanted.keepOriginalAudio != true)
+            let store = StudioDraftStore(files: files)
+            guard let data = store.encode(StudioDraft(project: project, playhead: 0)), store.write(data) else {
+                return ([], warnings + ["The voiceover was made but could not be saved beside the take."])
+            }
+            let count = result.spoken.count
+            let sound = wanted.keepOriginalAudio == true ? "over the recording's own sound" : "in place of the recording's own sound"
+            let sent = chosen.source.sendsText ? ", \(result.charactersSent) characters" : ", nothing sent anywhere"
+            return (["Spoke \(count) narration line\(count == 1 ? "" : "s") with \(chosen.label) (\(chosen.source == .local ? "Kokoro" : "ElevenLabs")\(sent)), \(sound)."], warnings)
+        } catch {
+            return ([], warnings + ["Voiceover was not made: \(error.localizedDescription). \(skipped)"])
         }
     }
 

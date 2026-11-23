@@ -12,11 +12,24 @@ No other third-party code is bundled into the built extension.
 
 ## Shipped in the Mac app
 
-The Mac app contains **no third-party code**. It uses The system frameworks (SwiftUI, AppKit, AVFoundation, ScreenCaptureKit, Speech, Foundation Models, Core Image), which are part of macOS and are not redistributed.
+The Mac app's recording, editing, captions and everything in `RelaytakeCore` use no third-party code. Only the on-device voice (see the table) brings in outside code, linked into the app target alone. The app also uses the system frameworks (SwiftUI, AppKit, AVFoundation, ScreenCaptureKit, Speech, Foundation Models, Core Image), which are part of macOS and are not redistributed.
 
 | Component | License | Use |
 | --- | --- | --- |
 | `mac/Packages/PlainspokenSpeech` | MIT (see its [LICENSE](mac/Packages/PlainspokenSpeech/LICENSE)) | On-device speech recognition helpers (engines, language models, vocabulary, offline guard). Written by the same author, kept here as its own package; it depends only on system frameworks. |
+
+The on-device voice for voiceovers (Settings ▸ Voice) is built from these, all pinned to exact versions in `mac/Package.swift` and `mac/Package.resolved`. Their license texts are in [`licenses/`](licenses/).
+
+| Component | License | Use |
+| --- | --- | --- |
+| [kokoro-ios](https://github.com/mlalma/kokoro-ios) 1.0.11 | MIT | Runs the Kokoro speech model with MLX. [`licenses/kokoro-ios-LICENSE`](licenses/kokoro-ios-LICENSE) |
+| [MisakiSwift](https://github.com/mlalma/MisakiSwift) 1.0.6 | Apache-2.0 | Turns English text into the sounds to speak, with its bundled pronunciation dictionaries. [`licenses/MisakiSwift-LICENSE`](licenses/MisakiSwift-LICENSE) |
+| [MLXUtilsLibrary](https://github.com/mlalma/MLXUtilsLibrary) 0.0.6 | Apache-2.0 | Helpers used by the two above. [`licenses/MLXUtilsLibrary-LICENSE`](licenses/MLXUtilsLibrary-LICENSE) |
+| [MLX Swift](https://github.com/ml-explore/mlx-swift) 0.30.2 (with the MLX C++ library it builds) | MIT | Apple's array framework, run on the GPU. [`licenses/mlx-swift-LICENSE`](licenses/mlx-swift-LICENSE) |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) 0.9.21 | MIT | Reads archives for MLXUtilsLibrary. [`licenses/ZIPFoundation-LICENSE`](licenses/ZIPFoundation-LICENSE) |
+| [swift-numerics](https://github.com/apple/swift-numerics) 1.1.1 | Apache-2.0 | Numeric types used by MisakiSwift. [`licenses/swift-numerics-LICENSE`](licenses/swift-numerics-LICENSE) |
+
+**Not bundled; downloaded by the person on request:** the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model weights and voices (Apache-2.0), as converted by [mlx-community](https://huggingface.co/mlx-community/Kokoro-82M-bf16). The model's page says it was trained on permissive or non-copyrighted audio, and credits two CC BY datasets: [Koniwa](https://github.com/koniwa/koniwa) `tnc` (CC BY 3.0) and [SIWIS](https://datashare.ed.ac.uk/handle/10283/2353) (CC BY 4.0), plus synthetic data from contributors. Check that page for the current terms before redistributing the weights.
 
 ## Optional tools you provide yourself
 

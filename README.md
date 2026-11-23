@@ -16,7 +16,7 @@ It comes in two forms that share the same idea:
 ## Why
 
 - **Local first.** Recordings are ordinary files on your Mac (or chunks in your browser's storage). Nothing is uploaded unless you copy a file somewhere yourself.
-- **Private by construction.** There is no analytics code, no remote script and no hosted media. The Mac app refuses all web requests, and you can verify that yourself (`--network-check`). See [docs/privacy.md](docs/privacy.md).
+- **Private by construction.** There is no analytics code, no remote script and no hosted media. The Mac app refuses all web requests (you can verify that yourself with `--network-check`), except a one-time download of the on-device voice and an optional ElevenLabs voiceover, each started by you. See [docs/privacy.md](docs/privacy.md).
 - **Open and hackable.** MIT licensed, small codebase, no third-party runtime dependencies in the Mac app.
 - **Smart where it helps.** On a Mac with on-device intelligence, captions, titles, summaries and suggested cuts are made on-device. Without it, you still get a recorder and an editor.
 
@@ -34,7 +34,7 @@ Details and limits are in [mac/README.md](mac/README.md).
 
 ### Mac
 
-You need macOS 26 or later and the Swift toolchain (the full developer tools, or `xcode-select --install`).
+You need macOS 26 or later and the full Xcode with its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), because the on-device voice runs on the GPU through MLX. The command line tools alone are no longer enough to build the app.
 
 ```sh
 git clone <this repository>

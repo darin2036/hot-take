@@ -103,6 +103,22 @@ public struct EditList: Codable, Equatable, Sendable {
         }
     }
 
+    /// What to speak the narration with.
+    public struct Voiceover: Codable, Equatable, Sendable {
+        /// `local` (a voice on this Mac, free and private) or `elevenlabs` (a voice on the person's account, which spends their characters).
+        /// Without it, whichever the person chose in Settings.
+        public var engine: String?
+        /// A voice by name: one of the on-device voices (Heart, Bella, Nicole, Sarah, Michael, Fenrir, Puck, Emma, George, Lewis) or a voice on
+        /// the person's ElevenLabs account, by name or id. Without it, the voice they chose in Settings.
+        public var voice: String?
+        /// Keep the recording's own sound under the voice. Off by default: the voice replaces it.
+        public var keepOriginalAudio: Bool?
+
+        public init(voice: String? = nil, keepOriginalAudio: Bool? = nil, engine: String? = nil) {
+            self.engine = engine; self.voice = voice; self.keepOriginalAudio = keepOriginalAudio
+        }
+    }
+
     /// Keep only this stretch; everything before and after is cut.
     public var keep: Cut?
     public var cuts: [Cut]?
@@ -125,6 +141,9 @@ public struct EditList: Codable, Equatable, Sendable {
     public var captionStyle: String?
     /// With `narrationCaptions`: `bottom` (the default), `middle` or `top`.
     public var captionPosition: String?
+    /// Speak the `narration` lines in an AI voice and lay them on the Voiceover track, each in the part of the video that begins at its
+    /// marker. Needs `narration`, and a voice the person has set up (on this Mac, or ElevenLabs, which they must also have allowed agents to use).
+    public var voiceover: Voiceover?
     /// Draw a ring at each recorded click.
     public var clickRings: Bool?
     /// Markers become chapters of the saved copy unless this is false.
@@ -136,8 +155,9 @@ public struct EditList: Codable, Equatable, Sendable {
         keep: Cut? = nil, cuts: [Cut]? = nil, zooms: [Zoom]? = nil, texts: [Text]? = nil, shapes: [Shape]? = nil,
         autoZoom: Bool? = nil, clickRings: Bool? = nil, narration: [String: String]? = nil, chapters: Bool? = nil,
         replace: Bool? = nil, maxZoomsPerMinute: Double? = nil, autoRetakes: Bool? = nil, narrationCaptions: Bool? = nil,
-        captionStyle: String? = nil, captionPosition: String? = nil
+        captionStyle: String? = nil, captionPosition: String? = nil, voiceover: Voiceover? = nil
     ) {
+        self.voiceover = voiceover
         self.narrationCaptions = narrationCaptions; self.captionStyle = captionStyle; self.captionPosition = captionPosition
         self.maxZoomsPerMinute = maxZoomsPerMinute; self.autoRetakes = autoRetakes
         self.autoZoom = autoZoom; self.clickRings = clickRings

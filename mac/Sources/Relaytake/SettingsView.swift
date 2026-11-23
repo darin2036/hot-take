@@ -41,6 +41,16 @@ enum Pref {
     static let agentControl = "agentControl"
     /// Also let agents move the mouse and press keys to drive the app being demoed (through `hottake click`). Off by default.
     static let agentInput = "agentInput"
+    /// The ElevenLabs voice chosen for voiceovers (its id and name), and the speech model. The key itself is in the Keychain.
+    static let elevenLabsVoice = "elevenLabsVoice"
+    static let elevenLabsVoiceName = "elevenLabsVoiceName"
+    static let elevenLabsModel = "elevenLabsModel"
+    /// Let local agents spend the account's characters on a demo's voiceover. Off by default.
+    static let elevenLabsAgents = "elevenLabsAgents"
+    /// Which voice speaks a voiceover: "local" (Kokoro, on this Mac, the default) or "elevenLabs".
+    static let voiceSource = "voiceSource"
+    /// The on-device voice chosen for voiceovers (a `KokoroModel.Voice` id).
+    static let localVoice = "localVoice"
 }
 
 /// Everything configurable lives here, not in the menu-bar dropdown. Panes follow the system's own
@@ -53,6 +63,8 @@ struct SettingsView: View {
                 .tabItem { Label("Recording", systemImage: "record.circle") }
             ProcessingPane()
                 .tabItem { Label("Captions & Summary", systemImage: "captions.bubble") }
+            VoicePane()
+                .tabItem { Label("Voice", systemImage: "waveform") }
             WatermarkPane()
                 .tabItem { Label("Watermark", systemImage: "scribble.variable") }
             PermissionsPane()
@@ -67,7 +79,7 @@ struct SettingsView: View {
     }
 }
 
-private extension View {
+extension View {
     /// Grouped pane that hugs its content and never bounces or scrolls when everything is visible.
     func settingsPane() -> some View {
         self.formStyle(.grouped)

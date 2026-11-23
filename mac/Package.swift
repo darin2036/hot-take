@@ -14,6 +14,11 @@ let package = Package(
         // offline guard. Depends on nothing but system frameworks (no third-party code). It began in the
         // Plainspoken dictation app and is kept here as its own package so both can use it.
         .package(path: "Packages/PlainspokenSpeech"),
+        // The on-device voice for voiceovers (Kokoro, run with Apple's MLX on the GPU). Both are pinned exactly: a newer MLX or Kokoro
+        // port can change how audio sounds or stop building, so an update is a deliberate change with its own check by ear.
+        // They are linked into the app only; `RelaytakeCore` and `hottake` stay free of third-party code.
+        .package(url: "https://github.com/mlalma/kokoro-ios.git", exact: "1.0.11"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.30.2"),
     ],
     targets: [
         // Pure logic (caption formatting, file naming, prompts). No system-framework capture code.
@@ -23,6 +28,8 @@ let package = Package(
             dependencies: [
                 "RelaytakeCore",
                 .product(name: "PlainspokenSpeech", package: "PlainspokenSpeech"),
+                .product(name: "KokoroSwift", package: "kokoro-ios"),
+                .product(name: "MLX", package: "mlx-swift"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

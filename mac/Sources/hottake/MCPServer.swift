@@ -18,7 +18,7 @@ struct MCPServer {
         autoZoom and clickRings (booleans); maxZoomsPerMinute (caps the automatic zooms); narration {markerName: "what to say"} for the voice-over script; \
         narrationCaptions (true turns the narration lines into captions drawn in the video, a captions file and the saved copy's transcript, so a demo with no spoken audio is still readable; \
         with captionStyle classic|bold|minimal|highlight and captionPosition bottom|middle|top); \
-        autoRetakes (on by default: a "Retake: Name" marker cuts the failed attempt at "Name" and keeps its narration); replace (true to start over).
+        voiceover {engine (local or elevenlabs, optional), voice (a voice name, optional), keepOriginalAudio (optional)} speaks the narration lines in an AI voice and puts them on the Voiceover track, using the voice the person set up in Settings: by default one on their Mac, which is free and private (voices Heart, Bella, Nicole, Sarah, Michael, Fenrir, Puck, Emma, George, Lewis); ElevenLabs only if the person allowed agents to use it, and it spends their characters, at most 5000 per edit, so keep lines short and do not re-run it needlessly. If no voice is available the edit is saved with a warning; autoRetakes (on by default: a "Retake: Name" marker cuts the failed attempt at "Name" and keeps its narration); replace (true to start over).
         """
 
     private static let tools: [Tool] = [
